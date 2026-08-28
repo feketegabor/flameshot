@@ -32,6 +32,7 @@ public:
 
     void setIgnoreMouse(bool ignore);
     void setIdleCentralCursor(const QCursor& cursor);
+    void setClickSelectionCandidate(const QRect& geometry);
 
     void setGeometryAnimated(const QRect& r);
     void setGeometry(const QRect& r);
@@ -89,9 +90,12 @@ private:
     QPoint m_handleOffset;
 
     QPoint m_dragStartPos;
+    QRect m_clickSelectionCandidate;
+    QRect m_pendingClickSelection;
     SideType m_activeSide;
     QCursor m_idleCentralCursor;
     bool m_ignoreMouse;
+    bool m_clickSelectionPending;
     bool m_mouseStartMove;
     float m_aspectRatio;
 

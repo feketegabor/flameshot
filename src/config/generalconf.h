@@ -66,6 +66,8 @@ private slots:
 #endif
 #if defined(Q_OS_MACOS)
     void useNativeFullscreenChanged(bool checked);
+    void smartRegionDetectionChanged(bool checked);
+    void requestSmartRegionAccessibility();
 #endif
 #if defined(Q_OS_UNIX) && !defined(Q_OS_MACOS)
     void useX11LegacyScreenshotChanged(bool checked);
@@ -113,6 +115,7 @@ private:
 #endif
 #if defined(Q_OS_MACOS)
     void initUseNativeFullscreen();
+    void initSmartRegionDetection();
 #endif
 #if defined(Q_OS_UNIX) && !defined(Q_OS_MACOS)
     void initUseX11LegacyScreenshot();
@@ -170,6 +173,8 @@ private:
 #endif
 #if defined(Q_OS_MACOS)
     QCheckBox* m_useNativeFullscreen;
+    QCheckBox* m_smartRegionDetection;
+    QPushButton* m_smartRegionAccessibilityButton;
 #endif
 #if defined(Q_OS_UNIX) && !defined(Q_OS_MACOS)
     QCheckBox* m_useX11LegacyScreenshot;

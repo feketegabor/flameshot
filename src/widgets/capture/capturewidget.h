@@ -19,7 +19,9 @@
 #include "widgets/capture/capturetoolobjects.h"
 #include "widgets/capture/magnifierwidget.h"
 #include "widgets/capture/selectionwidget.h"
+#include "widgets/capture/smartregiondetector.h"
 
+#include <QElapsedTimer>
 #include <QMessageBox>
 #include <QPointer>
 #include <QTimer>
@@ -123,6 +125,7 @@ private:
     void initContext(bool fullscreen, const CaptureRequest& req);
     void initPanel();
     void initSelection();
+    void initSmartRegionDetection();
     void initShortcuts();
     void initButtons();
     void initHelpMessage();
@@ -148,6 +151,7 @@ private:
     QRect paddedUpdateRect(const QRect& r) const;
     void drawErrorMessage(const QString& msg, QPainter* painter);
     void drawInactiveRegion(QPainter* painter);
+    void drawSmartRegionCandidate(QPainter* painter);
     void drawToolsData(bool drawSelection = true);
     void drawObjectSelection();
 
@@ -157,6 +161,14 @@ private:
     CaptureTool::Type activeButtonToolType() const;
 
     QPoint snapToGrid(const QPoint& point) const;
+
+    void scheduleSmartRegionUpdate(const QPoint& position,
+                                   bool immediate = false);
+    void updateSmartRegionCandidate();
+    void clearSmartRegionCandidate();
+    bool navigateSmartRegion(int direction);
+    QRect currentSmartRegionGeometry() const;
+    const SmartRegionCandidate* currentSmartRegionCandidate() const;
 
     ////////////////////////////////////////
     // Class members
@@ -187,6 +199,13 @@ private:
     UpdateNotificationWidget* m_updateNotificationWidget;
 #endif
     quint64 m_lastMouseWheel;
+    quint64 m_lastSmartRegionWheel{ 0 };
+    std::unique_ptr<SmartRegionDetector> m_smartRegionDetector;
+    QList<SmartRegionCandidate> m_smartRegionCandidates;
+    int m_smartRegionIndex{ -1 };
+    QPoint m_pendingSmartRegionPosition;
+    QTimer m_smartRegionUpdateTimer;
+    QElapsedTimer m_smartRegionUpdateElapsed;
     QPointer<CaptureToolButton> m_sizeIndButton;
     // Last pressed button
     QPointer<CaptureToolButton> m_activeButton;
