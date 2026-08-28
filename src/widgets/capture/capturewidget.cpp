@@ -52,29 +52,15 @@ auto const MOUSE_WHEEL_TRESHOLD = 60;
 
 namespace {
 constexpr bool smartRegionOwnsWheel(bool selectionVisible,
-                                    bool smartRegionEnabled)
+                                    bool candidateAvailable)
 {
-    return !selectionVisible && smartRegionEnabled;
+    return !selectionVisible && candidateAvailable;
 }
 
 static_assert(smartRegionOwnsWheel(false, true));
 static_assert(!smartRegionOwnsWheel(true, true));
 static_assert(!smartRegionOwnsWheel(false, false));
 static_assert(!smartRegionOwnsWheel(true, false));
-
-constexpr int smartRegionNavigationDirection(int delta, bool inverted)
-{
-    // Follow the physical gesture even when macOS natural scrolling inverts
-    // the delta delivered by Qt.
-    const int normalizedDelta = inverted ? -delta : delta;
-    return normalizedDelta > 0 ? 1 : normalizedDelta < 0 ? -1 : 0;
-}
-
-static_assert(smartRegionNavigationDirection(-1, true) == 1);
-static_assert(smartRegionNavigationDirection(1, true) == -1);
-static_assert(smartRegionNavigationDirection(1, false) == 1);
-static_assert(smartRegionNavigationDirection(-1, false) == -1);
-static_assert(smartRegionNavigationDirection(0, false) == 0);
 }
 
 // CaptureWidget is the main component used to capture the screen. It contains
@@ -508,8 +494,8 @@ void CaptureWidget::initHelpMessage()
     if (m_smartRegionDetector) {
         keyMap << std::pair(
           tr("Mouse"), tr("Click a detected region or drag a custom area"));
-        keyMap << std::pair(
-          tr("Mouse Wheel"), tr("Scroll up for parent, down for child"));
+        keyMap << std::pair(tr("Mouse Wheel"),
+                            tr("Choose a parent or child detected region"));
         if (!m_smartRegionDetector->accessibilityAvailable()) {
             keyMap << std::pair(
               tr("Accessibility"),
@@ -1197,32 +1183,23 @@ void CaptureWidget::wheelEvent(QWheelEvent* e)
      * not accept events faster that one in 200ms.
      * */
     if (smartRegionOwnsWheel(m_selection->isVisible(),
-                             m_smartRegionDetector != nullptr)) {
+                             currentSmartRegionCandidate() != nullptr)) {
         int smartRegionDelta = e->pixelDelta().y();
         if (smartRegionDelta == 0) {
             smartRegionDelta = e->angleDelta().y();
         }
 
         if (smartRegionDelta != 0) {
-            if (!currentSmartRegionCandidate()) {
-                scheduleSmartRegionUpdate(mapFromGlobal(QCursor::pos()), true);
-            }
-
             const qint64 current = QDateTime::currentMSecsSinceEpoch();
             const bool discreteWheel =
               qAbs(e->angleDelta().y()) >= MOUSE_WHEEL_TRESHOLD;
             if (discreteWheel || (current - m_lastSmartRegionWheel) > 180) {
                 m_lastSmartRegionWheel = current;
-                const int direction = smartRegionNavigationDirection(
-                  smartRegionDelta, e->inverted());
-                if (direction != 0 && currentSmartRegionCandidate()) {
-                    navigateSmartRegion(direction);
-                }
+                navigateSmartRegion(smartRegionDelta > 0 ? 1 : -1);
             }
+            e->accept();
+            return;
         }
-
-        e->accept();
-        return;
     }
 
     int toolSizeOffset = 0;
@@ -2339,5 +2316,43 @@ void CaptureWidget::drawSmartRegionCandidate(QPainter* painter)
     painter->setBrush(Qt::NoBrush);
     painter->setPen(QPen(outline, 2));
     painter->drawRect(geometry.adjusted(1, 1, -2, -2));
+
+    QString description = QStringLiteral("%1/%2  %3")
+                            .arg(m_smartRegionIndex + 1)
+                            .arg(m_smartRegionCandidates.size())
+                            .arg(candidate->description);
+    QFont labelFont = painter->font();
+    labelFont.setBold(true);
+    labelFont.setPointSizeF(std::max(9.0, labelFont.pointSizeF()));
+    painter->setFont(labelFont);
+
+    const QFontMetrics metrics(labelFont);
+    constexpr int horizontalPadding = 8;
+    constexpr int verticalPadding = 5;
+    const int maximumWidth = std::max(80, rect().width() - 16);
+    description = metrics.elidedText(
+      description, Qt::ElideRight, maximumWidth - horizontalPadding * 2);
+    QRect labelGeometry = metrics.boundingRect(description);
+    labelGeometry.adjust(
+      -horizontalPadding, -verticalPadding, horizontalPadding, verticalPadding);
+    QPoint labelPosition = geometry.topLeft() + QPoint(5, 5);
+    if (labelPosition.y() + labelGeometry.height() > rect().bottom() - 4) {
+        labelPosition.setY(rect().bottom() - labelGeometry.height() - 4);
+    }
+    if (labelPosition.x() + labelGeometry.width() > rect().right() - 4) {
+        labelPosition.setX(rect().right() - labelGeometry.width() - 4);
+    }
+    labelPosition.setX(std::max(4, labelPosition.x()));
+    labelPosition.setY(std::max(4, labelPosition.y()));
+    labelGeometry.moveTopLeft(labelPosition);
+
+    QColor labelBackground = m_uiColor;
+    labelBackground.setAlpha(235);
+    painter->setPen(Qt::NoPen);
+    painter->setBrush(labelBackground);
+    painter->drawRoundedRect(labelGeometry, 5, 5);
+    painter->setPen(ColorUtils::colorIsDark(labelBackground) ? Qt::white
+                                                             : Qt::black);
+    painter->drawText(labelGeometry, Qt::AlignCenter, description);
     painter->restore();
 }

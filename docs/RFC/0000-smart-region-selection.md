@@ -57,10 +57,9 @@ is selected, moving the pointer over a detected region previews that region:
 * after an area is committed, the mouse wheel retains its current tool-size
   behavior.
 
-The preview dims everything outside the candidate and draws a colored outline.
-It deliberately avoids an inline role/index label because that label can cover
-the content the user is trying to inspect. The selection can still be resized
-and annotated using existing Flameshot tools.
+The preview dims everything outside the candidate, draws a colored outline, and
+shows the candidate's role and position in the available ancestor chain. The
+selection can still be resized and annotated using existing Flameshot tools.
 
 The first backend targets macOS:
 
@@ -95,7 +94,7 @@ Window enumeration occurs once per capture because Apple documents it as a
 relatively expensive operation. Pointer hit-testing is throttled to at most once
 every 35 milliseconds. Accessibility messaging uses a short timeout so an
 unresponsive target application cannot indefinitely freeze the overlay. Painting
-uses only the current candidate rectangle.
+uses only the current candidate rectangle and label.
 
 The candidate hierarchy is recalculated when the pointer moves. Scrolling only
 changes an index in the already collected chain.
@@ -141,10 +140,6 @@ child elements, or the common case where the intended window is not focused.
 
 * Window-only fallback with Accessibility denied.
 * Leaf, parent, reverse-to-child, and containing-window navigation.
-* Physical upward scrolling moves toward the parent with both natural and
-  traditional scrolling enabled; downward scrolling moves toward the child.
-* Before a selection is committed, every wheel event is consumed by smart-region
-  navigation and never changes the annotation tool size.
 * Click-to-commit followed by resize, annotation, copy, and save.
 * Drag-to-create a manual rectangle from inside a detected window.
 * Chrome, Finder, native Qt, and a target that exposes few AX elements.
