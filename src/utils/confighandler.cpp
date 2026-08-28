@@ -96,6 +96,7 @@ static QMap<class QString, QSharedPointer<ValueHandler>>
     OPTION("useJpgForClipboard"          ,Bool               ( false         )),
 #if defined(Q_OS_MACOS)
     OPTION("useNativeFullscreen"         ,Bool               ( false         )),
+    OPTION("smartRegionDetection"        ,Bool               ( true          )),
 #endif
     OPTION("uploadWithoutConfirmation"   ,Bool               ( false         )),
     OPTION("saveAfterCopy"               ,Bool               ( false         )),

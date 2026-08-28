@@ -3,6 +3,9 @@
 
 #include "generalconf.h"
 #include "utils/confighandler.h"
+#if defined(Q_OS_MACOS)
+#include "widgets/capture/smartregiondetector.h"
+#endif
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -59,6 +62,7 @@ GeneralConf::GeneralConf(QWidget* parent)
 #endif
 #if defined(Q_OS_MACOS)
     initUseNativeFullscreen();
+    initSmartRegionDetection();
 #endif
 #if defined(Q_OS_UNIX) && !defined(Q_OS_MACOS)
     initUseX11LegacyScreenshot();
@@ -132,6 +136,8 @@ void GeneralConf::_updateComponents(bool allowEmptySavePath)
 #endif
 #if defined(Q_OS_MACOS)
     m_useNativeFullscreen->setChecked(config.useNativeFullscreen());
+    m_smartRegionDetection->setChecked(config.smartRegionDetection());
+    m_smartRegionAccessibilityButton->setEnabled(config.smartRegionDetection());
 #endif
 #if defined(Q_OS_UNIX) && !defined(Q_OS_MACOS)
     m_useX11LegacyScreenshot->setChecked(config.useX11LegacyScreenshot());
@@ -964,6 +970,45 @@ void GeneralConf::initUseNativeFullscreen()
 void GeneralConf::useNativeFullscreenChanged(bool checked)
 {
     ConfigHandler().setUseNativeFullscreen(checked);
+}
+
+void GeneralConf::initSmartRegionDetection()
+{
+    m_smartRegionDetection =
+      new QCheckBox(tr("Enable smart region selection"), this);
+    m_smartRegionDetection->setToolTip(
+      tr("Hover over a window or interface element, use the mouse wheel to "
+         "choose a parent or child region, and click to select it. Dragging "
+         "still creates a custom rectangle. UI element detection requires "
+         "macOS Accessibility permission."));
+    m_scrollAreaLayout->addWidget(m_smartRegionDetection);
+    connect(m_smartRegionDetection,
+            &QCheckBox::clicked,
+            this,
+            &GeneralConf::smartRegionDetectionChanged);
+
+    m_smartRegionAccessibilityButton =
+      new QPushButton(tr("Grant Accessibility Access..."), this);
+    m_smartRegionAccessibilityButton->setToolTip(
+      tr("Open the standard macOS permission prompt. This is required only "
+         "for selecting interface elements inside a window."));
+    m_scrollAreaLayout->addWidget(m_smartRegionAccessibilityButton);
+    connect(m_smartRegionAccessibilityButton,
+            &QPushButton::clicked,
+            this,
+            &GeneralConf::requestSmartRegionAccessibility);
+}
+
+void GeneralConf::smartRegionDetectionChanged(bool checked)
+{
+    ConfigHandler().setSmartRegionDetection(checked);
+    m_smartRegionAccessibilityButton->setEnabled(checked);
+}
+
+void GeneralConf::requestSmartRegionAccessibility()
+{
+    auto detector = SmartRegionDetector::create();
+    detector->requestAccessibilityPermission();
 }
 #endif
 

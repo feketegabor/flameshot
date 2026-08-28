@@ -39,6 +39,9 @@
 #include <QShortcut>
 #include <QWindow>
 
+#include <algorithm>
+#include <utility>
+
 #if !defined(DISABLE_UPDATE_CHECKER)
 #include "widgets/updatenotificationwidget.h"
 #endif
@@ -46,6 +49,19 @@
 #define MOUSE_DISTANCE_TO_START_MOVING 3
 
 auto const MOUSE_WHEEL_TRESHOLD = 60;
+
+namespace {
+constexpr bool smartRegionOwnsWheel(bool selectionVisible,
+                                    bool candidateAvailable)
+{
+    return !selectionVisible && candidateAvailable;
+}
+
+static_assert(smartRegionOwnsWheel(false, true));
+static_assert(!smartRegionOwnsWheel(true, true));
+static_assert(!smartRegionOwnsWheel(false, false));
+static_assert(!smartRegionOwnsWheel(true, false));
+}
 
 // CaptureWidget is the main component used to capture the screen. It contains
 // an area of selection with its respective buttons.
@@ -226,6 +242,9 @@ CaptureWidget::CaptureWidget(const CaptureRequest& req,
 
     initButtons();
     initSelection(); // button handler must be initialized before
+#if defined(Q_OS_MACOS)
+    initSmartRegionDetection();
+#endif
     initShortcuts(); // must be called after initSelection
     // init magnify
     if (m_config.showMagnifier()) {
@@ -471,7 +490,23 @@ void CaptureWidget::showxywh()
 void CaptureWidget::initHelpMessage()
 {
     QList<QPair<QString, QString>> keyMap;
+#if defined(Q_OS_MACOS)
+    if (m_smartRegionDetector) {
+        keyMap << std::pair(
+          tr("Mouse"), tr("Click a detected region or drag a custom area"));
+        keyMap << std::pair(tr("Mouse Wheel"),
+                            tr("Choose a parent or child detected region"));
+        if (!m_smartRegionDetector->accessibilityAvailable()) {
+            keyMap << std::pair(
+              tr("Accessibility"),
+              tr("Enable in General settings to detect UI elements"));
+        }
+    } else {
+        keyMap << std::pair(tr("Mouse"), tr("Select screenshot area"));
+    }
+#else
     keyMap << std::pair(tr("Mouse"), tr("Select screenshot area"));
+#endif
     using CT = CaptureTool;
     for (auto toolType : { CT::TYPE_ACCEPT, CT::TYPE_SAVE, CT::TYPE_COPY }) {
         if (!m_tools.contains(toolType)) {
@@ -485,7 +520,8 @@ void CaptureWidget::initHelpMessage()
             keyMap << std::pair(shortcut, tool->description());
         }
     }
-    keyMap << std::pair(tr("Mouse Wheel"), tr("Change tool size"));
+    keyMap << std::pair(tr("Mouse Wheel"),
+                        tr("Change tool size after selection"));
     keyMap << std::pair(tr("Right Click"), tr("Show color picker"));
     keyMap << std::pair(ConfigHandler().shortcut("TYPE_TOGGLE_PANEL"),
                         tr("Open side panel"));
@@ -778,6 +814,7 @@ void CaptureWidget::paintEvent(QPaintEvent* paintEvent)
         painter.restore();
     // draw inactive region
     drawInactiveRegion(&painter);
+    drawSmartRegionCandidate(&painter);
 
     if (!isActiveWindow()) {
         drawErrorMessage(
@@ -965,6 +1002,7 @@ void CaptureWidget::mouseMoveEvent(QMouseEvent* e)
 
     m_context.mousePos = e->pos();
     if (e->buttons() != Qt::LeftButton) {
+        scheduleSmartRegionUpdate(e->pos());
         updateTool(activeButtonTool());
         updateCursor();
         return;
@@ -1024,6 +1062,8 @@ void CaptureWidget::mouseMoveEvent(QMouseEvent* e)
             }
         }
     }
+
+    clearSmartRegionCandidate();
     updateCursor();
 }
 
@@ -1142,6 +1182,26 @@ void CaptureWidget::wheelEvent(QWheelEvent* e)
      * impossible to scroll. It's easier to calculate number of requests and do
      * not accept events faster that one in 200ms.
      * */
+    if (smartRegionOwnsWheel(m_selection->isVisible(),
+                             currentSmartRegionCandidate() != nullptr)) {
+        int smartRegionDelta = e->pixelDelta().y();
+        if (smartRegionDelta == 0) {
+            smartRegionDelta = e->angleDelta().y();
+        }
+
+        if (smartRegionDelta != 0) {
+            const qint64 current = QDateTime::currentMSecsSinceEpoch();
+            const bool discreteWheel =
+              qAbs(e->angleDelta().y()) >= MOUSE_WHEEL_TRESHOLD;
+            if (discreteWheel || (current - m_lastSmartRegionWheel) > 180) {
+                m_lastSmartRegionWheel = current;
+                navigateSmartRegion(smartRegionDelta > 0 ? 1 : -1);
+            }
+            e->accept();
+            return;
+        }
+    }
+
     int toolSizeOffset = 0;
     if (qAbs(e->angleDelta().y()) >= MOUSE_WHEEL_TRESHOLD) {
         auto const delta =
@@ -1370,6 +1430,11 @@ void CaptureWidget::initSelection()
         }
     });
     connect(m_selection, &SelectionWidget::visibilityChanged, this, [this]() {
+        if (m_selection->isVisible()) {
+            clearSmartRegionCandidate();
+        } else if (m_smartRegionDetector) {
+            scheduleSmartRegionUpdate(mapFromGlobal(QCursor::pos()), true);
+        }
         if (!m_selection->isVisible() && !m_helpMessage.isEmpty()) {
             OverlayMessage::push(m_helpMessage);
         }
@@ -1387,6 +1452,143 @@ void CaptureWidget::initSelection()
         m_context.selection = extendedRect(m_selection->geometry());
         emit m_selection->geometrySettled();
     }
+}
+
+void CaptureWidget::initSmartRegionDetection()
+{
+#if defined(Q_OS_MACOS)
+    if (!m_config.smartRegionDetection()) {
+        return;
+    }
+
+    m_smartRegionDetector = SmartRegionDetector::create();
+    m_smartRegionDetector->refresh();
+    m_smartRegionUpdateTimer.setSingleShot(true);
+    connect(&m_smartRegionUpdateTimer, &QTimer::timeout, this, [this]() {
+        updateSmartRegionCandidate();
+        m_smartRegionUpdateElapsed.restart();
+    });
+    m_smartRegionUpdateElapsed.start();
+    scheduleSmartRegionUpdate(mapFromGlobal(QCursor::pos()), true);
+#endif
+}
+
+void CaptureWidget::scheduleSmartRegionUpdate(const QPoint& position,
+                                              bool immediate)
+{
+    if (!m_smartRegionDetector) {
+        return;
+    }
+
+    m_pendingSmartRegionPosition = position;
+    constexpr qint64 updateIntervalMs = 35;
+    const qint64 elapsed = m_smartRegionUpdateElapsed.isValid()
+                             ? m_smartRegionUpdateElapsed.elapsed()
+                             : updateIntervalMs;
+    if (immediate || elapsed >= updateIntervalMs) {
+        m_smartRegionUpdateTimer.stop();
+        updateSmartRegionCandidate();
+        m_smartRegionUpdateElapsed.restart();
+    } else if (!m_smartRegionUpdateTimer.isActive()) {
+        m_smartRegionUpdateTimer.start(updateIntervalMs - elapsed);
+    }
+}
+
+void CaptureWidget::updateSmartRegionCandidate()
+{
+    if (!m_smartRegionDetector || m_selection->isVisible() || m_activeButton ||
+        m_activeTool || QApplication::mouseButtons().testFlag(Qt::LeftButton) ||
+        !rect().contains(m_pendingSmartRegionPosition)) {
+        clearSmartRegionCandidate();
+        return;
+    }
+
+    const QRect previousLeaf =
+      m_smartRegionCandidates.isEmpty()
+        ? QRect()
+        : m_smartRegionCandidates.constFirst().geometry;
+    const SmartRegionCandidate* previous = currentSmartRegionCandidate();
+    const QRect previousSelection = previous ? previous->geometry : QRect();
+    const QRect oldGeometry = currentSmartRegionGeometry();
+
+    QList<SmartRegionCandidate> candidates =
+      m_smartRegionDetector->candidatesAt(
+        mapToGlobal(m_pendingSmartRegionPosition));
+    int nextIndex = candidates.isEmpty() ? -1 : 0;
+    if (!candidates.isEmpty() &&
+        candidates.constFirst().geometry == previousLeaf &&
+        previousSelection.isValid()) {
+        for (int index = 0; index < candidates.size(); ++index) {
+            if (candidates.at(index).geometry == previousSelection) {
+                nextIndex = index;
+                break;
+            }
+        }
+    }
+
+    m_smartRegionCandidates = std::move(candidates);
+    m_smartRegionIndex = nextIndex;
+    const QRect newGeometry = currentSmartRegionGeometry();
+    m_selection->setClickSelectionCandidate(newGeometry);
+    update(paddedUpdateRect(oldGeometry).united(paddedUpdateRect(newGeometry)));
+}
+
+void CaptureWidget::clearSmartRegionCandidate()
+{
+    if (m_smartRegionCandidates.isEmpty() && m_smartRegionIndex < 0) {
+        if (m_selection) {
+            m_selection->setClickSelectionCandidate({});
+        }
+        return;
+    }
+
+    const QRect oldGeometry = currentSmartRegionGeometry();
+    m_smartRegionCandidates.clear();
+    m_smartRegionIndex = -1;
+    if (m_selection) {
+        m_selection->setClickSelectionCandidate({});
+    }
+    update(paddedUpdateRect(oldGeometry));
+}
+
+bool CaptureWidget::navigateSmartRegion(int direction)
+{
+    if (m_smartRegionCandidates.isEmpty() || m_smartRegionIndex < 0) {
+        return false;
+    }
+
+    const int nextIndex = qBound(
+      0, m_smartRegionIndex + direction, m_smartRegionCandidates.size() - 1);
+    if (nextIndex == m_smartRegionIndex) {
+        return true;
+    }
+
+    const QRect oldGeometry = currentSmartRegionGeometry();
+    m_smartRegionIndex = nextIndex;
+    const QRect newGeometry = currentSmartRegionGeometry();
+    m_selection->setClickSelectionCandidate(newGeometry);
+    update(paddedUpdateRect(oldGeometry).united(paddedUpdateRect(newGeometry)));
+    return true;
+}
+
+const SmartRegionCandidate* CaptureWidget::currentSmartRegionCandidate() const
+{
+    if (m_smartRegionIndex < 0 ||
+        m_smartRegionIndex >= m_smartRegionCandidates.size()) {
+        return nullptr;
+    }
+    return &m_smartRegionCandidates.at(m_smartRegionIndex);
+}
+
+QRect CaptureWidget::currentSmartRegionGeometry() const
+{
+    const SmartRegionCandidate* candidate = currentSmartRegionCandidate();
+    if (!candidate) {
+        return {};
+    }
+    return QRect(mapFromGlobal(candidate->geometry.topLeft()),
+                 candidate->geometry.size())
+      .intersected(rect());
 }
 
 void CaptureWidget::setState(CaptureToolButton* b)
@@ -2090,10 +2292,67 @@ void CaptureWidget::drawInactiveRegion(QPainter* painter)
     QRect r;
     if (m_selection->isVisible()) {
         r = m_selection->geometry().normalized();
+    } else {
+        r = currentSmartRegionGeometry().normalized();
     }
     QRegion grey(rect());
     grey = grey.subtracted(r);
 
     painter->setClipRegion(grey);
     painter->drawRect(-1, -1, rect().width() + 1, rect().height() + 1);
+}
+
+void CaptureWidget::drawSmartRegionCandidate(QPainter* painter)
+{
+    const SmartRegionCandidate* candidate = currentSmartRegionCandidate();
+    const QRect geometry = currentSmartRegionGeometry();
+    if (!candidate || !geometry.isValid() || m_selection->isVisible()) {
+        return;
+    }
+
+    painter->save();
+    QColor outline = m_uiColor;
+    outline.setAlpha(245);
+    painter->setBrush(Qt::NoBrush);
+    painter->setPen(QPen(outline, 2));
+    painter->drawRect(geometry.adjusted(1, 1, -2, -2));
+
+    QString description = QStringLiteral("%1/%2  %3")
+                            .arg(m_smartRegionIndex + 1)
+                            .arg(m_smartRegionCandidates.size())
+                            .arg(candidate->description);
+    QFont labelFont = painter->font();
+    labelFont.setBold(true);
+    labelFont.setPointSizeF(std::max(9.0, labelFont.pointSizeF()));
+    painter->setFont(labelFont);
+
+    const QFontMetrics metrics(labelFont);
+    constexpr int horizontalPadding = 8;
+    constexpr int verticalPadding = 5;
+    const int maximumWidth = std::max(80, rect().width() - 16);
+    description = metrics.elidedText(
+      description, Qt::ElideRight, maximumWidth - horizontalPadding * 2);
+    QRect labelGeometry = metrics.boundingRect(description);
+    labelGeometry.adjust(
+      -horizontalPadding, -verticalPadding, horizontalPadding, verticalPadding);
+    QPoint labelPosition = geometry.topLeft() + QPoint(5, 5);
+    if (labelPosition.y() + labelGeometry.height() > rect().bottom() - 4) {
+        labelPosition.setY(rect().bottom() - labelGeometry.height() - 4);
+    }
+    if (labelPosition.x() + labelGeometry.width() > rect().right() - 4) {
+        labelPosition.setX(rect().right() - labelGeometry.width() - 4);
+    }
+    labelPosition.setX(std::max(4, labelPosition.x()));
+    labelPosition.setY(std::max(4, labelPosition.y()));
+    labelGeometry.moveTopLeft(labelPosition);
+
+    QColor labelBackground = m_uiColor;
+    labelBackground.setAlpha(235);
+    painter->setPen(Qt::NoPen);
+    painter->setBrush(labelBackground);
+    painter->drawRoundedRect(labelGeometry, 5, 5);
+    painter->setPen(ColorUtils::colorIsDark(labelBackground) ? Qt::white
+                                                             : Qt::black);
+    painter->drawText(labelGeometry, Qt::AlignCenter, description);
+    painter->restore();
 }

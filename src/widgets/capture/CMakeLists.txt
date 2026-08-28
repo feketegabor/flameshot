@@ -9,6 +9,7 @@ target_sources(
         hovereventfilter.h
         overlaymessage.h
         selectionwidget.h
+        smartregiondetector.h
         magnifierwidget.h
         notifierbox.h
         modificationcommand.h)
@@ -24,5 +25,13 @@ target_sources(
         overlaymessage.cpp
         notifierbox.cpp
         selectionwidget.cpp
+        smartregiondetector.cpp
         magnifierwidget.cpp
         modificationcommand.cpp)
+
+if(APPLE)
+    target_sources(
+            flameshot
+            PRIVATE macossmartregiondetector.h
+                    macossmartregiondetector.cpp)
+endif()

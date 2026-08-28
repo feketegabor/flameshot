@@ -15,11 +15,16 @@
 
 #define MARGIN (m_THandle.width())
 
+namespace {
+constexpr int CLICK_SELECTION_DRAG_THRESHOLD = 3;
+}
+
 SelectionWidget::SelectionWidget(QColor c, QWidget* parent)
   : QWidget(parent)
   , m_color(std::move(c))
   , m_activeSide(NO_SIDE)
   , m_ignoreMouse(false)
+  , m_clickSelectionPending(false)
   , m_aspectRatio(1)
 {
     // prevents this widget from consuming CaptureToolButton mouse events
@@ -109,7 +114,16 @@ SelectionWidget::SideType getProperSide(SelectionWidget::SideType side,
 void SelectionWidget::setIgnoreMouse(bool ignore)
 {
     m_ignoreMouse = ignore;
+    if (ignore) {
+        m_clickSelectionPending = false;
+        m_pendingClickSelection = {};
+    }
     updateCursor();
+}
+
+void SelectionWidget::setClickSelectionCandidate(const QRect& geometry)
+{
+    m_clickSelectionCandidate = geometry.normalized();
 }
 
 /**
@@ -177,6 +191,15 @@ void SelectionWidget::parentMousePressEvent(QMouseEvent* e)
 
     m_dragStartPos = e->pos();
     m_activeSide = getMouseSide(e->pos());
+    if (!isVisible() && m_clickSelectionCandidate.isValid() &&
+        m_clickSelectionCandidate.contains(e->pos())) {
+        m_clickSelectionPending = true;
+        m_pendingClickSelection = m_clickSelectionCandidate;
+        m_activeSide = NO_SIDE;
+    } else {
+        m_clickSelectionPending = false;
+        m_pendingClickSelection = {};
+    }
     if ((float)geometry().height() > 0) {
         m_aspectRatio = (float)geometry().width() / (float)geometry().height();
     }
@@ -184,6 +207,18 @@ void SelectionWidget::parentMousePressEvent(QMouseEvent* e)
 
 void SelectionWidget::parentMouseReleaseEvent(QMouseEvent* e)
 {
+    if (e->button() == Qt::LeftButton && m_clickSelectionPending) {
+        const QRect candidate = m_pendingClickSelection;
+        m_clickSelectionPending = false;
+        m_pendingClickSelection = {};
+        show();
+        setGeometry(candidate);
+        m_activeSide = NO_SIDE;
+        updateCursor();
+        emit geometrySettled();
+        return;
+    }
+
     // released outside of the selection area
     if (!getMouseSide(e->pos())) {
         hide();
@@ -200,6 +235,20 @@ void SelectionWidget::parentMouseMoveEvent(QMouseEvent* e)
 
     if (e->buttons() != Qt::LeftButton) {
         return;
+    }
+
+    if (m_clickSelectionPending) {
+        if ((e->pos() - m_dragStartPos).manhattanLength() <=
+            CLICK_SELECTION_DRAG_THRESHOLD) {
+            return;
+        }
+
+        // The pointer moved far enough to make this a regular manual drag.
+        m_clickSelectionPending = false;
+        m_pendingClickSelection = {};
+        show();
+        m_activeSide = TOPLEFT_SIDE;
+        setGeometry({ m_dragStartPos, m_dragStartPos });
     }
 
     SideType mouseSide = m_activeSide;
