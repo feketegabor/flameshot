@@ -2316,43 +2316,5 @@ void CaptureWidget::drawSmartRegionCandidate(QPainter* painter)
     painter->setBrush(Qt::NoBrush);
     painter->setPen(QPen(outline, 2));
     painter->drawRect(geometry.adjusted(1, 1, -2, -2));
-
-    QString description = QStringLiteral("%1/%2  %3")
-                            .arg(m_smartRegionIndex + 1)
-                            .arg(m_smartRegionCandidates.size())
-                            .arg(candidate->description);
-    QFont labelFont = painter->font();
-    labelFont.setBold(true);
-    labelFont.setPointSizeF(std::max(9.0, labelFont.pointSizeF()));
-    painter->setFont(labelFont);
-
-    const QFontMetrics metrics(labelFont);
-    constexpr int horizontalPadding = 8;
-    constexpr int verticalPadding = 5;
-    const int maximumWidth = std::max(80, rect().width() - 16);
-    description = metrics.elidedText(
-      description, Qt::ElideRight, maximumWidth - horizontalPadding * 2);
-    QRect labelGeometry = metrics.boundingRect(description);
-    labelGeometry.adjust(
-      -horizontalPadding, -verticalPadding, horizontalPadding, verticalPadding);
-    QPoint labelPosition = geometry.topLeft() + QPoint(5, 5);
-    if (labelPosition.y() + labelGeometry.height() > rect().bottom() - 4) {
-        labelPosition.setY(rect().bottom() - labelGeometry.height() - 4);
-    }
-    if (labelPosition.x() + labelGeometry.width() > rect().right() - 4) {
-        labelPosition.setX(rect().right() - labelGeometry.width() - 4);
-    }
-    labelPosition.setX(std::max(4, labelPosition.x()));
-    labelPosition.setY(std::max(4, labelPosition.y()));
-    labelGeometry.moveTopLeft(labelPosition);
-
-    QColor labelBackground = m_uiColor;
-    labelBackground.setAlpha(235);
-    painter->setPen(Qt::NoPen);
-    painter->setBrush(labelBackground);
-    painter->drawRoundedRect(labelGeometry, 5, 5);
-    painter->setPen(ColorUtils::colorIsDark(labelBackground) ? Qt::white
-                                                             : Qt::black);
-    painter->drawText(labelGeometry, Qt::AlignCenter, description);
     painter->restore();
 }
