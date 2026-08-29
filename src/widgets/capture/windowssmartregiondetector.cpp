@@ -6,9 +6,9 @@
 #define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
-#include <objbase.h>
-#include <dwmapi.h>
+#include <ole2.h>
 #include <UIAutomation.h>
+#include <dwmapi.h>
 #include <wrl/client.h>
 
 #include <QGuiApplication>
