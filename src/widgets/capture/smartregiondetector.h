@@ -14,6 +14,11 @@ struct SmartRegionCandidate
     QRect geometry;
 };
 
+QList<SmartRegionCandidate> makeSmartRegionCandidateChain(
+  const QList<QRect>& elementGeometries,
+  const QRect& windowGeometry,
+  const QPoint& globalPosition);
+
 class SmartRegionDetector
 {
 public:

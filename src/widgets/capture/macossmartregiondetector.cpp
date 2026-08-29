@@ -7,7 +7,6 @@
 #include <CoreGraphics/CoreGraphics.h>
 
 #include <QCoreApplication>
-#include <QSet>
 
 #include <algorithm>
 #include <cmath>
@@ -158,21 +157,6 @@ QString copyAXString(AXUIElementRef element, CFStringRef attribute)
     return stringValue(holder.get());
 }
 
-QString geometryKey(const QRect& geometry)
-{
-    return QStringLiteral("%1,%2,%3,%4")
-      .arg(geometry.x())
-      .arg(geometry.y())
-      .arg(geometry.width())
-      .arg(geometry.height());
-}
-
-bool isUsefulGeometry(const QRect& geometry, const QPoint& position)
-{
-    return geometry.width() >= 4 && geometry.height() >= 4 &&
-           geometry.contains(position);
-}
-
 bool accessibilityTrusted(bool prompt)
 {
     if (!prompt) {
@@ -281,13 +265,12 @@ void MacOsSmartRegionDetector::refresh()
 QList<SmartRegionCandidate> MacOsSmartRegionDetector::candidatesAt(
   const QPoint& globalPosition)
 {
-    QList<SmartRegionCandidate> candidates;
     const Impl::Window* window = m_impl->windowAt(globalPosition);
     if (!window) {
-        return candidates;
+        return {};
     }
 
-    QSet<QString> seenGeometries;
+    QList<QRect> elementGeometries;
     if (m_impl->trusted) {
         CFRef<AXUIElementRef> application(
           AXUIElementCreateApplication(window->ownerPid));
@@ -310,13 +293,7 @@ QList<SmartRegionCandidate> MacOsSmartRegionDetector::candidatesAt(
 
                     QRect geometry;
                     if (copyAXFrame(current.get(), &geometry)) {
-                        geometry = geometry.intersected(window->geometry);
-                        const QString key = geometryKey(geometry);
-                        if (isUsefulGeometry(geometry, globalPosition) &&
-                            !seenGeometries.contains(key)) {
-                            candidates.append({ geometry });
-                            seenGeometries.insert(key);
-                        }
+                        elementGeometries.append(geometry);
                     }
 
                     if (role == QStringLiteral("AXWindow")) {
@@ -340,12 +317,8 @@ QList<SmartRegionCandidate> MacOsSmartRegionDetector::candidatesAt(
         }
     }
 
-    const QString windowKey = geometryKey(window->geometry);
-    if (!seenGeometries.contains(windowKey)) {
-        candidates.append({ window->geometry });
-    }
-
-    return candidates;
+    return makeSmartRegionCandidateChain(
+      elementGeometries, window->geometry, globalPosition);
 }
 
 bool MacOsSmartRegionDetector::accessibilityAvailable() const
