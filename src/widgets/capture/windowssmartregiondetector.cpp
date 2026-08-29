@@ -19,7 +19,6 @@
 #include <chrono>
 #include <cmath>
 #include <condition_variable>
-#include <limits>
 #include <mutex>
 #include <optional>
 #include <thread>
@@ -190,7 +189,7 @@ public:
         m_requestReady.notify_one();
         if (!m_resultReady.wait_for(
               lock,
-              std::chrono::milliseconds(50),
+              std::chrono::milliseconds(150),
               [this, requestId]() {
                   return m_stopping || m_completedRequestId == requestId;
               }) ||
@@ -214,13 +213,67 @@ private:
                               const POINT& position,
                               RECT* rect)
     {
-        BOOL offscreen = TRUE;
-        if (FAILED(element->get_CurrentIsOffscreen(&offscreen)) || offscreen ||
-            FAILED(element->get_CurrentBoundingRectangle(rect)) ||
-            !validNativeRect(*rect)) {
+        if (FAILED(element->get_CurrentBoundingRectangle(rect)) ||
+            !validNativeRect(*rect) || !containsPoint(*rect, position)) {
             return false;
         }
-        return containsPoint(*rect, position);
+
+        BOOL offscreen = TRUE;
+        return SUCCEEDED(element->get_CurrentIsOffscreen(&offscreen)) &&
+               !offscreen;
+    }
+
+    struct ElementHit
+    {
+        ComPtr<IUIAutomationElement> element;
+        int depth;
+        qint64 area;
+    };
+
+    static ElementHit deepestHitAt(IUIAutomationTreeWalker* walker,
+                                   IUIAutomationElement* element,
+                                   const POINT& position,
+                                   const RECT& geometry,
+                                   int depth,
+                                   int* visited)
+    {
+        ElementHit best{
+            element,
+            depth,
+            static_cast<qint64>(geometry.right - geometry.left) *
+              (geometry.bottom - geometry.top),
+        };
+        if (depth >= 32 || *visited >= 1024) {
+            return best;
+        }
+
+        ComPtr<IUIAutomationElement> child;
+        if (FAILED(walker->GetFirstChildElement(element, &child))) {
+            return best;
+        }
+
+        for (int siblingCount = 0;
+             child && siblingCount < 512 && *visited < 1024;
+             ++siblingCount) {
+            ++*visited;
+            RECT childRect{};
+            if (elementRectAt(child.Get(), position, &childRect)) {
+                ElementHit candidate = deepestHitAt(
+                  walker, child.Get(), position, childRect, depth + 1, visited);
+                if (candidate.depth > best.depth ||
+                    (candidate.depth == best.depth &&
+                     candidate.area < best.area)) {
+                    best = std::move(candidate);
+                }
+            }
+
+            ComPtr<IUIAutomationElement> next;
+            if (FAILED(walker->GetNextSiblingElement(child.Get(), &next))) {
+                break;
+            }
+            child = std::move(next);
+        }
+        return best;
     }
 
     static ComPtr<IUIAutomationElement> deepestElementAt(
@@ -228,43 +281,14 @@ private:
       IUIAutomationElement* root,
       const POINT& position)
     {
-        ComPtr<IUIAutomationElement> current = root;
-        for (int depth = 0; depth < 32; ++depth) {
-            ComPtr<IUIAutomationElement> child;
-            if (FAILED(walker->GetFirstChildElement(current.Get(), &child)) ||
-                !child) {
-                break;
-            }
-
-            ComPtr<IUIAutomationElement> bestChild;
-            qint64 bestArea = std::numeric_limits<qint64>::max();
-            for (int siblingCount = 0; child && siblingCount < 512;
-                 ++siblingCount) {
-                RECT childRect{};
-                if (elementRectAt(child.Get(), position, &childRect)) {
-                    const qint64 area =
-                      static_cast<qint64>(childRect.right - childRect.left) *
-                      (childRect.bottom - childRect.top);
-                    if (area < bestArea) {
-                        bestArea = area;
-                        bestChild = child;
-                    }
-                }
-
-                ComPtr<IUIAutomationElement> next;
-                if (FAILED(
-                      walker->GetNextSiblingElement(child.Get(), &next))) {
-                    break;
-                }
-                child = std::move(next);
-            }
-
-            if (!bestChild) {
-                break;
-            }
-            current = std::move(bestChild);
+        RECT rootRect{};
+        if (!elementRectAt(root, position, &rootRect)) {
+            return root;
         }
-        return current;
+
+        int visited = 0;
+        return deepestHitAt(walker, root, position, rootRect, 0, &visited)
+          .element;
     }
 
     static QList<QRect> collectElementChain(IUIAutomation* automation,
