@@ -52,9 +52,9 @@ auto const MOUSE_WHEEL_TRESHOLD = 60;
 
 namespace {
 constexpr bool smartRegionOwnsWheel(bool selectionVisible,
-                                    bool candidateAvailable)
+                                    bool smartRegionEnabled)
 {
-    return !selectionVisible && candidateAvailable;
+    return !selectionVisible && smartRegionEnabled;
 }
 
 static_assert(smartRegionOwnsWheel(false, true));
@@ -1197,14 +1197,20 @@ void CaptureWidget::wheelEvent(QWheelEvent* e)
      * impossible to scroll. It's easier to calculate number of requests and do
      * not accept events faster that one in 200ms.
      * */
+    // Smart-region mode owns the complete preselection scroll gesture. Do not
+    // fall through to tool sizing while candidate detection is still pending.
     if (smartRegionOwnsWheel(m_selection->isVisible(),
-                             currentSmartRegionCandidate() != nullptr)) {
+                             m_smartRegionDetector != nullptr)) {
         int smartRegionDelta = e->pixelDelta().y();
         if (smartRegionDelta == 0) {
             smartRegionDelta = e->angleDelta().y();
         }
 
         if (smartRegionDelta != 0) {
+            if (!currentSmartRegionCandidate()) {
+                scheduleSmartRegionUpdate(mapFromGlobal(QCursor::pos()), true);
+            }
+
             const qint64 current = QDateTime::currentMSecsSinceEpoch();
             const bool discreteWheel =
               qAbs(e->angleDelta().y()) >= MOUSE_WHEEL_TRESHOLD;
@@ -1212,13 +1218,17 @@ void CaptureWidget::wheelEvent(QWheelEvent* e)
                 m_lastSmartRegionWheel = current;
                 const int direction = smartRegionNavigationDirection(
                   smartRegionDelta, e->inverted());
-                if (direction != 0) {
+                if (direction != 0 && currentSmartRegionCandidate()) {
                     navigateSmartRegion(direction);
                 }
             }
-            e->accept();
-            return;
         }
+
+        if (m_notifierBox->isVisible()) {
+            m_notifierBox->hide();
+        }
+        e->accept();
+        return;
     }
 
     int toolSizeOffset = 0;
