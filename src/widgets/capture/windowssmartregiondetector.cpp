@@ -420,6 +420,9 @@ struct WindowsSmartRegionDetector::Impl
         }
 
         const LONG_PTR extendedStyle = GetWindowLongPtrW(window, GWL_EXSTYLE);
+        if ((extendedStyle & WS_EX_TRANSPARENT) != 0) {
+            return;
+        }
         if ((extendedStyle & WS_EX_LAYERED) != 0) {
             BYTE alpha = 255;
             DWORD flags = 0;
