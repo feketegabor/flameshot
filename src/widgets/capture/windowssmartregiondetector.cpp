@@ -189,7 +189,7 @@ public:
         m_requestReady.notify_one();
         if (!m_resultReady.wait_for(
               lock,
-              std::chrono::milliseconds(150),
+              std::chrono::milliseconds(250),
               [this, requestId]() {
                   return m_stopping || m_completedRequestId == requestId;
               }) ||
