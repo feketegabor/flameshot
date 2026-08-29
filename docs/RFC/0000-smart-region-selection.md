@@ -76,6 +76,19 @@ The first backend targets macOS:
 5. Duplicate, tiny, invalid, and off-window rectangles are removed. The Window
    Server geometry remains a fallback when Accessibility access is unavailable.
 
+The Windows backend follows the same contract:
+
+1. `EnumWindows` records visible top-level windows before the overlay appears.
+2. `DwmGetWindowAttribute` supplies extended frame bounds and filters cloaked
+   windows, with `GetWindowRect` as a fallback.
+3. Microsoft UI Automation starts from the recorded window handle, hit-tests
+   its control-view descendants, and walks back through their parents.
+4. UI Automation calls run on a dedicated MTA worker with short connection,
+   transaction, and caller timeouts. A slow or unavailable provider therefore
+   falls back to the containing window without blocking the capture overlay.
+5. Native screen coordinates are mapped to Qt logical coordinates per monitor,
+   including mixed-scale displays.
+
 The detector is behind a platform-neutral interface. Every backend returns the
 same leaf-to-window candidate chain in global logical coordinates; the capture
 widget owns preview, navigation, and selection behavior. A backend can report
@@ -102,23 +115,21 @@ first implementation pull request.
 
 ### Configuration and permissions
 
-On macOS, a General setting named **Enable smart region selection** controls the
-feature and is disabled by default during the staged rollout. Enabling it is an
-explicit choice because preselection clicks and scrolling gain new behavior.
-Window snapping works without Accessibility permission. Selecting controls
-inside another application requires the standard macOS Accessibility
+On macOS and Windows, a General setting named **Enable smart region selection**
+controls the feature and is disabled by default. Enabling it is an explicit
+choice because preselection clicks and scrolling gain new behavior. On macOS,
+window snapping works without Accessibility permission, while selecting
+controls inside another application requires the standard macOS Accessibility
 permission. General settings provides an explicit **Grant Accessibility
-Access...** button that invokes the standard macOS permission prompt before
-capture begins. Without that permission, Flameshot continues with window-only
-detection.
+Access...** button on macOS only. Windows UI Automation does not require that
+permission UI.
 
 ## Performance Impact
 
-Window enumeration occurs once per capture because Apple documents it as a
-relatively expensive operation. Pointer hit-testing is throttled to at most once
-every 35 milliseconds. Accessibility messaging uses a short timeout so an
-unresponsive target application cannot indefinitely freeze the overlay. Painting
-uses only the current candidate rectangle.
+Window enumeration occurs once per capture. Pointer hit-testing is throttled to
+at most once every 35 milliseconds. Accessibility and UI Automation messaging
+use short timeouts so an unresponsive target application cannot indefinitely
+freeze the overlay. Painting uses only the current candidate rectangle.
 
 The candidate hierarchy is recalculated when the pointer moves. Scrolling only
 changes an index in the already collected chain.
@@ -130,8 +141,8 @@ The manual drag gesture, committed selection, annotation tools, copy/save
 actions, and command-line behavior are unchanged. Unsupported platforms and
 users who do not opt in receive no behavior change.
 
-The initial implementation is macOS-only. Other platforms compile a no-op
-detector until they gain a backend.
+The initial implementation supports macOS and Windows. Other platforms compile
+a no-op detector until they gain a backend.
 
 ## Prior Art and Alternatives
 
@@ -161,9 +172,9 @@ child elements, or the common case where the intended window is not focused.
 ## Drawbacks
 
 * Element-level detection needs a macOS privacy permission.
-* Accessibility quality depends on the target application's implementation.
-  Some games, remote desktops, canvas-based interfaces, and custom controls may
-  expose only a window or a coarse container.
+* Accessibility and UI Automation quality depend on the target application's
+  implementation. Some games, remote desktops, canvas-based interfaces, and
+  custom controls may expose only a window or a coarse container.
 * Platform-specific backends require separate testing and maintenance.
 * A staged rollout temporarily gives supported platforms more capability than
   unsupported platforms, even though existing behavior remains unchanged.
@@ -180,12 +191,14 @@ child elements, or the common case where the intended window is not focused.
   navigation and never changes the annotation tool size.
 * Click-to-commit followed by resize, annotation, copy, and save.
 * Drag-to-create a manual rectangle from inside a detected window.
-* Chrome, Finder, native Qt, and a target that exposes few AX elements.
+* Chrome, Finder or File Explorer, native Qt, and a target that exposes few
+  accessibility elements.
+* Windows App and RDP content, which may expose only a coarse remote surface.
 * Single Retina display, multiple equal-scale displays, mixed scaling, and a
   partially off-screen window.
 * Accessibility target that is slow, closes during hit-testing, or refuses the
   requested attributes.
-* Feature disabled and non-macOS builds.
+* Feature disabled and unsupported-platform builds.
 
 ## Errata
 
