@@ -7,9 +7,7 @@
 #include <CoreGraphics/CoreGraphics.h>
 
 #include <QCoreApplication>
-#include <QMap>
 #include <QSet>
-#include <QStringList>
 
 #include <algorithm>
 #include <cmath>
@@ -106,11 +104,6 @@ QString stringValue(CFTypeRef value)
     return result;
 }
 
-QString dictionaryString(CFDictionaryRef dictionary, CFStringRef key)
-{
-    return stringValue(CFDictionaryGetValue(dictionary, key));
-}
-
 QRect qtRect(const CGRect& rect)
 {
     const int left = static_cast<int>(std::floor(CGRectGetMinX(rect)));
@@ -165,54 +158,6 @@ QString copyAXString(AXUIElementRef element, CFStringRef attribute)
     return stringValue(holder.get());
 }
 
-QString readableRole(const QString& role)
-{
-    static const QMap<QString, QString> roles = {
-        { QStringLiteral("AXButton"), QStringLiteral("Button") },
-        { QStringLiteral("AXCheckBox"), QStringLiteral("Checkbox") },
-        { QStringLiteral("AXComboBox"), QStringLiteral("Combo box") },
-        { QStringLiteral("AXGroup"), QStringLiteral("Group") },
-        { QStringLiteral("AXImage"), QStringLiteral("Image") },
-        { QStringLiteral("AXLink"), QStringLiteral("Link") },
-        { QStringLiteral("AXList"), QStringLiteral("List") },
-        { QStringLiteral("AXMenu"), QStringLiteral("Menu") },
-        { QStringLiteral("AXMenuItem"), QStringLiteral("Menu item") },
-        { QStringLiteral("AXOutline"), QStringLiteral("Outline") },
-        { QStringLiteral("AXPopUpButton"), QStringLiteral("Pop-up button") },
-        { QStringLiteral("AXRadioButton"), QStringLiteral("Radio button") },
-        { QStringLiteral("AXScrollArea"), QStringLiteral("Scroll area") },
-        { QStringLiteral("AXSheet"), QStringLiteral("Sheet") },
-        { QStringLiteral("AXSlider"), QStringLiteral("Slider") },
-        { QStringLiteral("AXStaticText"), QStringLiteral("Text") },
-        { QStringLiteral("AXTabGroup"), QStringLiteral("Tab group") },
-        { QStringLiteral("AXTable"), QStringLiteral("Table") },
-        { QStringLiteral("AXTextArea"), QStringLiteral("Text area") },
-        { QStringLiteral("AXTextField"), QStringLiteral("Text field") },
-        { QStringLiteral("AXToolbar"), QStringLiteral("Toolbar") },
-        { QStringLiteral("AXWebArea"), QStringLiteral("Web content") },
-        { QStringLiteral("AXWindow"), QStringLiteral("Window") },
-    };
-    if (roles.contains(role)) {
-        return roles.value(role);
-    }
-    return role.startsWith(QStringLiteral("AX")) ? role.mid(2) : role;
-}
-
-QString candidateDescription(AXUIElementRef element, const QString& role)
-{
-    QString title = copyAXString(element, kAXTitleAttribute).trimmed();
-    if (title.isEmpty()) {
-        title = copyAXString(element, kAXDescriptionAttribute).trimmed();
-    }
-    if (title.length() > 80) {
-        title = title.left(77) + QStringLiteral("...");
-    }
-
-    const QString readable = readableRole(role);
-    return title.isEmpty() ? readable
-                           : QStringLiteral("%1: %2").arg(readable, title);
-}
-
 QString geometryKey(const QRect& geometry)
 {
     return QStringLiteral("%1,%2,%3,%4")
@@ -253,8 +198,6 @@ struct MacOsSmartRegionDetector::Impl
     {
         QRect geometry;
         pid_t ownerPid{ 0 };
-        QString ownerName;
-        QString windowName;
     };
 
     QList<Window> windows;
@@ -331,10 +274,6 @@ void MacOsSmartRegionDetector::refresh()
         Impl::Window window;
         window.geometry = geometry;
         window.ownerPid = static_cast<pid_t>(ownerPid);
-        window.ownerName =
-          dictionaryString(dictionary, kCGWindowOwnerName).trimmed();
-        window.windowName =
-          dictionaryString(dictionary, kCGWindowName).trimmed();
         m_impl->windows.append(std::move(window));
     }
 }
@@ -375,9 +314,7 @@ QList<SmartRegionCandidate> MacOsSmartRegionDetector::candidatesAt(
                         const QString key = geometryKey(geometry);
                         if (isUsefulGeometry(geometry, globalPosition) &&
                             !seenGeometries.contains(key)) {
-                            candidates.append(
-                              { geometry,
-                                candidateDescription(current.get(), role) });
+                            candidates.append({ geometry });
                             seenGeometries.insert(key);
                         }
                     }
@@ -403,31 +340,9 @@ QList<SmartRegionCandidate> MacOsSmartRegionDetector::candidatesAt(
         }
     }
 
-    QStringList nameParts;
-    if (!window->ownerName.isEmpty()) {
-        nameParts.append(window->ownerName);
-    }
-    if (!window->windowName.isEmpty() &&
-        window->windowName != window->ownerName) {
-        nameParts.append(window->windowName);
-    }
-    QString windowDescription = QStringLiteral("Window");
-    if (!nameParts.isEmpty()) {
-        windowDescription +=
-          QStringLiteral(": ") + nameParts.join(QStringLiteral(" — "));
-    }
-
     const QString windowKey = geometryKey(window->geometry);
     if (!seenGeometries.contains(windowKey)) {
-        candidates.append({ window->geometry, windowDescription });
-    } else {
-        const auto duplicate = std::find_if(
-          candidates.begin(), candidates.end(), [&window](const auto& item) {
-              return item.geometry == window->geometry;
-          });
-        if (duplicate != candidates.end()) {
-            duplicate->description = windowDescription;
-        }
+        candidates.append({ window->geometry });
     }
 
     return candidates;

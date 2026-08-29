@@ -509,8 +509,8 @@ void CaptureWidget::initHelpMessage()
     if (m_smartRegionDetector) {
         keyMap << std::pair(
           tr("Mouse"), tr("Click a detected region or drag a custom area"));
-        keyMap << std::pair(
-          tr("Mouse Wheel"), tr("Scroll up for parent, down for child"));
+        keyMap << std::pair(tr("Mouse Wheel"),
+                            tr("Scroll up for parent, down for child"));
         if (!m_smartRegionDetector->accessibilityAvailable()) {
             keyMap << std::pair(
               tr("Accessibility"),
@@ -536,7 +536,9 @@ void CaptureWidget::initHelpMessage()
         }
     }
     keyMap << std::pair(tr("Mouse Wheel"),
-                        tr("Change tool size after selection"));
+                        m_smartRegionDetector
+                          ? tr("Change tool size after selection")
+                          : tr("Change tool size"));
     keyMap << std::pair(tr("Right Click"), tr("Show color picker"));
     keyMap << std::pair(ConfigHandler().shortcut("TYPE_TOGGLE_PANEL"),
                         tr("Open side panel"));
@@ -2333,9 +2335,8 @@ void CaptureWidget::drawInactiveRegion(QPainter* painter)
 
 void CaptureWidget::drawSmartRegionCandidate(QPainter* painter)
 {
-    const SmartRegionCandidate* candidate = currentSmartRegionCandidate();
     const QRect geometry = currentSmartRegionGeometry();
-    if (!candidate || !geometry.isValid() || m_selection->isVisible()) {
+    if (!geometry.isValid() || m_selection->isVisible()) {
         return;
     }
 

@@ -6,14 +6,12 @@
 #include <QList>
 #include <QPoint>
 #include <QRect>
-#include <QString>
 
 #include <memory>
 
 struct SmartRegionCandidate
 {
     QRect geometry;
-    QString description;
 };
 
 class SmartRegionDetector
