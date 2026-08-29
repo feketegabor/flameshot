@@ -140,6 +140,8 @@ child elements, or the common case where the intended window is not focused.
 
 * Window-only fallback with Accessibility denied.
 * Leaf, parent, reverse-to-child, and containing-window navigation.
+* Physical upward scrolling moves toward the parent with both natural and
+  traditional scrolling enabled; downward scrolling moves toward the child.
 * Click-to-commit followed by resize, annotation, copy, and save.
 * Drag-to-create a manual rectangle from inside a detected window.
 * Chrome, Finder, native Qt, and a target that exposes few AX elements.

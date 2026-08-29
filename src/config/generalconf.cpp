@@ -978,9 +978,9 @@ void GeneralConf::initSmartRegionDetection()
       new QCheckBox(tr("Enable smart region selection"), this);
     m_smartRegionDetection->setToolTip(
       tr("Hover over a window or interface element, use the mouse wheel to "
-         "choose a parent or child region, and click to select it. Dragging "
-         "still creates a custom rectangle. UI element detection requires "
-         "macOS Accessibility permission."));
+         "scroll up toward its parent or down toward its child, and click to "
+         "select it. Dragging still creates a custom rectangle. UI element "
+         "detection requires macOS Accessibility permission."));
     m_scrollAreaLayout->addWidget(m_smartRegionDetection);
     connect(m_smartRegionDetection,
             &QCheckBox::clicked,

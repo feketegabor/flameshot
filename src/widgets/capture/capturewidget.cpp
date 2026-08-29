@@ -61,6 +61,21 @@ static_assert(smartRegionOwnsWheel(false, true));
 static_assert(!smartRegionOwnsWheel(true, true));
 static_assert(!smartRegionOwnsWheel(false, false));
 static_assert(!smartRegionOwnsWheel(true, false));
+
+constexpr int smartRegionNavigationDirection(int delta, bool inverted)
+{
+    // Candidate indices run from the deepest element toward its parents.
+    // Normalize Qt's delta so the physical gesture has the same meaning with
+    // both traditional and macOS natural scrolling.
+    const int physicalDelta = inverted ? -delta : delta;
+    return physicalDelta > 0 ? 1 : physicalDelta < 0 ? -1 : 0;
+}
+
+static_assert(smartRegionNavigationDirection(-1, true) == 1);
+static_assert(smartRegionNavigationDirection(1, true) == -1);
+static_assert(smartRegionNavigationDirection(1, false) == 1);
+static_assert(smartRegionNavigationDirection(-1, false) == -1);
+static_assert(smartRegionNavigationDirection(0, false) == 0);
 }
 
 // CaptureWidget is the main component used to capture the screen. It contains
@@ -494,8 +509,8 @@ void CaptureWidget::initHelpMessage()
     if (m_smartRegionDetector) {
         keyMap << std::pair(
           tr("Mouse"), tr("Click a detected region or drag a custom area"));
-        keyMap << std::pair(tr("Mouse Wheel"),
-                            tr("Choose a parent or child detected region"));
+        keyMap << std::pair(
+          tr("Mouse Wheel"), tr("Scroll up for parent, down for child"));
         if (!m_smartRegionDetector->accessibilityAvailable()) {
             keyMap << std::pair(
               tr("Accessibility"),
@@ -1195,7 +1210,11 @@ void CaptureWidget::wheelEvent(QWheelEvent* e)
               qAbs(e->angleDelta().y()) >= MOUSE_WHEEL_TRESHOLD;
             if (discreteWheel || (current - m_lastSmartRegionWheel) > 180) {
                 m_lastSmartRegionWheel = current;
-                navigateSmartRegion(smartRegionDelta > 0 ? 1 : -1);
+                const int direction = smartRegionNavigationDirection(
+                  smartRegionDelta, e->inverted());
+                if (direction != 0) {
+                    navigateSmartRegion(direction);
+                }
             }
             e->accept();
             return;
