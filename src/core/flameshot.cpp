@@ -211,6 +211,25 @@ CaptureWidget* Flameshot::gui(const CaptureRequest& req)
         return nullptr;
     }
 
+#if defined(Q_OS_MACOS)
+    // TCC can revoke access after a rebuild or signing change while the
+    // daemon is running. Do not open an overlay with a redacted screenshot.
+    if (!CGPreflightScreenCaptureAccess()) {
+        const QString message =
+          tr("Flameshot cannot record the screen. Enable this application in "
+             "System Settings > Privacy & Security > Screen & System Audio "
+             "Recording, then quit and reopen Flameshot. If it is already "
+             "enabled, remove and add this application again.");
+        AbstractLogger::error(AbstractLogger::Stderr) << message;
+        if (origin() == DAEMON) {
+            QMessageBox::warning(
+              nullptr, tr("Screen Recording permission"), message);
+        }
+        emit captureFailed();
+        return nullptr;
+    }
+#endif
+
     CaptureRequest request = req;
     if (request.captureMode() == CaptureRequest::GRAPHICAL_MODE &&
         request.initialSelection().isNull() &&
