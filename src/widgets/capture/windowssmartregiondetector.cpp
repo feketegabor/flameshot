@@ -5,10 +5,13 @@
 
 #define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
-#include <UIAutomation.h>
+// UIAutomation requires Windows and OLE declarations in this order.
+// clang-format off
 #include <Windows.h>
-#include <dwmapi.h>
 #include <ole2.h>
+#include <UIAutomation.h>
+// clang-format on
+#include <dwmapi.h>
 #include <wrl/client.h>
 
 #include <QGuiApplication>
