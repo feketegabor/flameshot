@@ -53,3 +53,12 @@ target_link_libraries(
 set_target_properties(flameshot-selection-widget-tests PROPERTIES AUTOMOC ON)
 add_test(NAME selection-widget COMMAND flameshot-selection-widget-tests)
 set_tests_properties(selection-widget PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+add_executable(flameshot-smart-region-geometry-tests smartregiongeometrytest.cpp)
+target_include_directories(
+  flameshot-smart-region-geometry-tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(
+  flameshot-smart-region-geometry-tests
+  PRIVATE project_options Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::Test)
+set_target_properties(flameshot-smart-region-geometry-tests PROPERTIES AUTOMOC ON)
+add_test(NAME smart-region-geometry COMMAND flameshot-smart-region-geometry-tests)

@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Flameshot Contributors
 
 #include "windowssmartregiondetector.h"
+#include "smartregiongeometry.h"
 
 #define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
@@ -30,11 +31,8 @@
 using Microsoft::WRL::ComPtr;
 
 namespace {
-struct ScreenMapping
-{
-    QRect nativeGeometry;
-    QRect logicalGeometry;
-};
+using SmartRegionGeometry::ScreenMapping;
+using SmartRegionGeometry::toLogicalRect;
 
 struct MonitorEnumerationContext
 {
@@ -96,133 +94,109 @@ BOOL CALLBACK collectMonitor(HMONITOR monitor, HDC, LPRECT, LPARAM contextValue)
     return TRUE;
 }
 
-QRect toLogicalRect(const QRect& nativeRect,
-                    const QList<ScreenMapping>& mappings)
-{
-    QRect logicalResult;
-    for (const ScreenMapping& mapping : mappings) {
-        const QRect nativePart = nativeRect.intersected(mapping.nativeGeometry);
-        if (!nativePart.isValid() || mapping.nativeGeometry.width() == 0 ||
-            mapping.nativeGeometry.height() == 0) {
-            continue;
-        }
-
-        const double xScale =
-          static_cast<double>(mapping.logicalGeometry.width()) /
-          mapping.nativeGeometry.width();
-        const double yScale =
-          static_cast<double>(mapping.logicalGeometry.height()) /
-          mapping.nativeGeometry.height();
-        const int left = static_cast<int>(
-          std::floor(mapping.logicalGeometry.x() +
-                     (nativePart.x() - mapping.nativeGeometry.x()) * xScale));
-        const int top = static_cast<int>(
-          std::floor(mapping.logicalGeometry.y() +
-                     (nativePart.y() - mapping.nativeGeometry.y()) * yScale));
-        const int right = static_cast<int>(std::ceil(
-          mapping.logicalGeometry.x() +
-          (nativePart.x() + nativePart.width() - mapping.nativeGeometry.x()) *
-            xScale));
-        const int bottom = static_cast<int>(std::ceil(
-          mapping.logicalGeometry.y() +
-          (nativePart.y() + nativePart.height() - mapping.nativeGeometry.y()) *
-            yScale));
-        const QRect logicalPart(left, top, right - left, bottom - top);
-        logicalResult = logicalResult.isValid()
-                          ? logicalResult.united(logicalPart)
-                          : logicalPart;
-    }
-    return logicalResult.isValid() ? logicalResult : nativeRect;
-}
-
-POINT toNativePoint(const QPoint& logicalPoint,
-                    const QList<ScreenMapping>& mappings)
-{
-    for (const ScreenMapping& mapping : mappings) {
-        if (!mapping.logicalGeometry.contains(logicalPoint) ||
-            mapping.logicalGeometry.width() == 0 ||
-            mapping.logicalGeometry.height() == 0) {
-            continue;
-        }
-
-        const double xScale =
-          static_cast<double>(mapping.nativeGeometry.width()) /
-          mapping.logicalGeometry.width();
-        const double yScale =
-          static_cast<double>(mapping.nativeGeometry.height()) /
-          mapping.logicalGeometry.height();
-        return {
-            mapping.nativeGeometry.x() +
-              static_cast<LONG>(std::lround(
-                (logicalPoint.x() - mapping.logicalGeometry.x()) * xScale)),
-            mapping.nativeGeometry.y() +
-              static_cast<LONG>(std::lround(
-                (logicalPoint.y() - mapping.logicalGeometry.y()) * yScale))
-        };
-    }
-    return { logicalPoint.x(), logicalPoint.y() };
-}
-
 class AutomationWorker
 {
-public:
-    AutomationWorker()
-      : m_thread(&AutomationWorker::run, this)
-    {}
-
-    ~AutomationWorker()
-    {
-        {
-            std::lock_guard lock(m_mutex);
-            m_stopping = true;
-        }
-        m_requestReady.notify_one();
-        if (m_thread.joinable()) {
-            m_thread.join();
-        }
-    }
-
-    QList<QRect> elementChainAt(HWND window, const POINT& position)
-    {
-        std::unique_lock lock(m_mutex);
-        const quint64 requestId = ++m_nextRequestId;
-        m_pendingRequest = Request{ requestId, window, position };
-        m_requestReady.notify_one();
-        if (!m_resultReady.wait_for(lock,
-                                    std::chrono::milliseconds(250),
-                                    [this, requestId]() {
-                                        return m_stopping ||
-                                               m_completedRequestId ==
-                                                 requestId;
-                                    }) ||
-            m_completedRequestId != requestId) {
-            return {};
-        }
-        return m_result;
-    }
-
-    bool available() const { return m_available.load(); }
-
 private:
+    using Clock = std::chrono::steady_clock;
+
     struct Request
     {
         quint64 id;
         HWND window;
         POINT position;
+        Clock::time_point deadline;
     };
 
-    static bool elementRectAt(IUIAutomationElement* element,
-                              const POINT& position,
+    struct State
+    {
+        std::mutex mutex;
+        std::condition_variable requestReady;
+        std::condition_variable resultReady;
+        std::optional<Request> pendingRequest;
+        QList<QRect> result;
+        quint64 completedRequestId{ 0 };
+        bool initializationFailed{ false };
+        std::atomic<quint64> latestRequestId{ 0 };
+        std::atomic_bool stopping{ false };
+        std::atomic_bool available{ false };
+    };
+
+public:
+    AutomationWorker()
+      : m_state(std::make_unique<State>())
+      , m_thread([state = m_state.get()]() { run(state); })
+    {}
+
+    ~AutomationWorker()
+    {
+        {
+            std::lock_guard lock(m_state->mutex);
+            m_state->stopping.store(true);
+            m_state->latestRequestId.fetch_add(1);
+        }
+        m_state->requestReady.notify_one();
+        // Native per-call limits and request cancellation bound normal UIA
+        // shutdown; all interfaces stay on their owning MTA thread.
+        m_thread.join();
+    }
+
+    QList<QRect> elementChainAt(HWND window, const POINT& position)
+    {
+        std::unique_lock lock(m_state->mutex);
+        if (m_state->initializationFailed || m_state->stopping.load()) {
+            return {};
+        }
+        const quint64 requestId = m_state->latestRequestId.fetch_add(1) + 1;
+        m_state->pendingRequest =
+          Request{ requestId,
+                   window,
+                   position,
+                   Clock::now() + std::chrono::milliseconds(200) };
+        m_state->requestReady.notify_one();
+        if (!m_state->resultReady.wait_for(
+              lock,
+              std::chrono::milliseconds(250),
+              [this, requestId]() {
+                  return m_state->stopping.load() ||
+                         m_state->initializationFailed ||
+                         m_state->completedRequestId == requestId;
+              }) ||
+            m_state->completedRequestId != requestId) {
+            // Invalidate timed-out work as well as superseded requests.
+            quint64 expected = requestId;
+            m_state->latestRequestId.compare_exchange_strong(expected,
+                                                             requestId + 1);
+            return {};
+        }
+        return m_state->result;
+    }
+
+    bool available() const { return m_state->available.load(); }
+
+private:
+    static bool active(const State& state, const Request& request)
+    {
+        return !state.stopping.load() &&
+               state.latestRequestId.load() == request.id &&
+               Clock::now() < request.deadline;
+    }
+
+    static bool elementRectAt(const State& state,
+                              const Request& request,
+                              IUIAutomationElement* element,
                               RECT* rect)
     {
-        if (FAILED(element->get_CurrentBoundingRectangle(rect)) ||
-            !validNativeRect(*rect) || !containsPoint(*rect, position)) {
+        if (!active(state, request) ||
+            FAILED(element->get_CurrentBoundingRectangle(rect)) ||
+            !validNativeRect(*rect) ||
+            !containsPoint(*rect, request.position) ||
+            !active(state, request)) {
             return false;
         }
 
         BOOL offscreen = TRUE;
         return SUCCEEDED(element->get_CurrentIsOffscreen(&offscreen)) &&
-               !offscreen;
+               !offscreen && active(state, request);
     }
 
     struct ElementHit
@@ -232,9 +206,10 @@ private:
         qint64 area;
     };
 
-    static ElementHit deepestHitAt(IUIAutomationTreeWalker* walker,
+    static ElementHit deepestHitAt(const State& state,
+                                   const Request& request,
+                                   IUIAutomationTreeWalker* walker,
                                    IUIAutomationElement* element,
-                                   const POINT& position,
                                    const RECT& geometry,
                                    int depth,
                                    int* visited)
@@ -245,7 +220,7 @@ private:
             static_cast<qint64>(geometry.right - geometry.left) *
               (geometry.bottom - geometry.top),
         };
-        if (depth >= 32 || *visited >= 1024) {
+        if (depth >= 32 || *visited >= 1024 || !active(state, request)) {
             return best;
         }
 
@@ -254,14 +229,19 @@ private:
             return best;
         }
 
-        for (int siblingCount = 0;
-             child && siblingCount < 512 && *visited < 1024;
+        for (int siblingCount = 0; child && siblingCount < 512 &&
+                                   *visited < 1024 && active(state, request);
              ++siblingCount) {
             ++*visited;
             RECT childRect{};
-            if (elementRectAt(child.Get(), position, &childRect)) {
-                ElementHit candidate = deepestHitAt(
-                  walker, child.Get(), position, childRect, depth + 1, visited);
+            if (elementRectAt(state, request, child.Get(), &childRect)) {
+                ElementHit candidate = deepestHitAt(state,
+                                                    request,
+                                                    walker,
+                                                    child.Get(),
+                                                    childRect,
+                                                    depth + 1,
+                                                    visited);
                 if (candidate.depth > best.depth ||
                     (candidate.depth == best.depth &&
                      candidate.area < best.area)) {
@@ -269,6 +249,9 @@ private:
                 }
             }
 
+            if (!active(state, request)) {
+                break;
+            }
             ComPtr<IUIAutomationElement> next;
             if (FAILED(walker->GetNextSiblingElement(child.Get(), &next))) {
                 break;
@@ -279,43 +262,49 @@ private:
     }
 
     static ComPtr<IUIAutomationElement> deepestElementAt(
+      const State& state,
+      const Request& request,
       IUIAutomationTreeWalker* walker,
-      IUIAutomationElement* root,
-      const POINT& position)
+      IUIAutomationElement* root)
     {
         RECT rootRect{};
-        if (!elementRectAt(root, position, &rootRect)) {
+        if (!elementRectAt(state, request, root, &rootRect)) {
             return root;
         }
 
         int visited = 0;
-        return deepestHitAt(walker, root, position, rootRect, 0, &visited)
+        return deepestHitAt(state, request, walker, root, rootRect, 0, &visited)
           .element;
     }
 
-    static QList<QRect> collectElementChain(IUIAutomation* automation,
-                                            IUIAutomationTreeWalker* walker,
-                                            HWND window,
-                                            const POINT& position)
+    static QList<QRect> collectElementChain(const State& state,
+                                            const Request& request,
+                                            IUIAutomation* automation,
+                                            IUIAutomationTreeWalker* walker)
     {
-        if (!IsWindow(window)) {
+        if (!IsWindow(request.window) || !active(state, request)) {
             return {};
         }
 
         ComPtr<IUIAutomationElement> root;
-        if (FAILED(automation->ElementFromHandle(window, &root)) || !root) {
+        if (FAILED(automation->ElementFromHandle(request.window, &root)) ||
+            !root || !active(state, request)) {
             return {};
         }
 
         ComPtr<IUIAutomationElement> current =
-          deepestElementAt(walker, root.Get(), position);
+          deepestElementAt(state, request, walker, root.Get());
         QList<QRect> geometries;
-        for (int depth = 0; current && depth < 32; ++depth) {
+        for (int depth = 0; current && depth < 32 && active(state, request);
+             ++depth) {
             RECT geometry{};
-            if (elementRectAt(current.Get(), position, &geometry)) {
+            if (elementRectAt(state, request, current.Get(), &geometry)) {
                 geometries.append(rectFromNative(geometry));
             }
 
+            if (!active(state, request)) {
+                return {};
+            }
             BOOL isRoot = FALSE;
             if (SUCCEEDED(automation->CompareElements(
                   current.Get(), root.Get(), &isRoot)) &&
@@ -323,6 +312,9 @@ private:
                 break;
             }
 
+            if (!active(state, request)) {
+                return {};
+            }
             ComPtr<IUIAutomationElement> parent;
             if (FAILED(walker->GetParentElement(current.Get(), &parent)) ||
                 !parent) {
@@ -330,74 +322,72 @@ private:
             }
             current = std::move(parent);
         }
-        return geometries;
+        return active(state, request) ? geometries : QList<QRect>{};
     }
 
-    void run()
+    static void run(State* state)
     {
         const HRESULT comResult = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
         if (FAILED(comResult)) {
+            std::lock_guard lock(state->mutex);
+            state->initializationFailed = true;
+            state->resultReady.notify_all();
             return;
         }
 
-        ComPtr<IUIAutomation> automation;
+        ComPtr<IUIAutomation2> automation;
         ComPtr<IUIAutomationTreeWalker> walker;
-        if (SUCCEEDED(CoCreateInstance(CLSID_CUIAutomation,
+        // CUIAutomation8 exposes the documented provider timeout interface.
+        // If those limits cannot be installed, retain window-only snapping.
+        if (SUCCEEDED(CoCreateInstance(CLSID_CUIAutomation8,
                                        nullptr,
                                        CLSCTX_INPROC_SERVER,
                                        IID_PPV_ARGS(&automation))) &&
+            SUCCEEDED(automation->put_ConnectionTimeout(80)) &&
+            SUCCEEDED(automation->put_TransactionTimeout(80)) &&
             SUCCEEDED(automation->get_ControlViewWalker(&walker)) && walker) {
-            ComPtr<IUIAutomation6> automation6;
-            if (SUCCEEDED(automation.As(&automation6))) {
-                automation6->put_ConnectionTimeout(80);
-                automation6->put_TransactionTimeout(80);
-            }
-            m_available.store(true);
+            state->available.store(true);
         }
 
         for (;;) {
             Request request{};
             {
-                std::unique_lock lock(m_mutex);
-                m_requestReady.wait(lock, [this]() {
-                    return m_stopping || m_pendingRequest.has_value();
+                std::unique_lock lock(state->mutex);
+                state->requestReady.wait(lock, [&state]() {
+                    return state->stopping.load() ||
+                           state->pendingRequest.has_value();
                 });
-                if (m_stopping) {
+                if (state->stopping.load()) {
                     break;
                 }
-                request = *m_pendingRequest;
-                m_pendingRequest.reset();
+                request = *state->pendingRequest;
+                state->pendingRequest.reset();
             }
 
             QList<QRect> result;
-            if (automation && walker) {
-                result = collectElementChain(automation.Get(),
-                                             walker.Get(),
-                                             request.window,
-                                             request.position);
+            if (state->available.load()) {
+                result = collectElementChain(
+                  *state, request, automation.Get(), walker.Get());
             }
 
             {
-                std::lock_guard lock(m_mutex);
-                m_result = std::move(result);
-                m_completedRequestId = request.id;
+                std::lock_guard lock(state->mutex);
+                if (state->latestRequestId.load() == request.id) {
+                    state->result = std::move(result);
+                    state->completedRequestId = request.id;
+                }
             }
-            m_resultReady.notify_all();
+            state->resultReady.notify_all();
         }
 
-        m_available.store(false);
+        // Release apartment-bound interfaces before shutting down COM.
+        walker.Reset();
+        automation.Reset();
         CoUninitialize();
+        state->available.store(false);
     }
 
-    mutable std::mutex m_mutex;
-    std::condition_variable m_requestReady;
-    std::condition_variable m_resultReady;
-    std::optional<Request> m_pendingRequest;
-    QList<QRect> m_result;
-    quint64 m_nextRequestId{ 0 };
-    quint64 m_completedRequestId{ 0 };
-    bool m_stopping{ false };
-    std::atomic_bool m_available{ false };
+    std::unique_ptr<State> m_state;
     std::thread m_thread;
 };
 }
@@ -407,7 +397,7 @@ struct WindowsSmartRegionDetector::Impl
     struct Window
     {
         HWND handle;
-        QRect logicalGeometry;
+        QRect nativeGeometry;
     };
 
     QList<Window> windows;
@@ -443,10 +433,12 @@ struct WindowsSmartRegionDetector::Impl
         }
 
         const LONG_PTR extendedStyle = GetWindowLongPtrW(window, GWL_EXSTYLE);
-        if ((extendedStyle & WS_EX_TRANSPARENT) != 0) {
-            return;
-        }
         if ((extendedStyle & WS_EX_LAYERED) != 0) {
+            // TRANSPARENT alone only changes painting order. Layered windows
+            // with this flag pass mouse input through to the window below.
+            if ((extendedStyle & WS_EX_TRANSPARENT) != 0) {
+                return;
+            }
             BYTE alpha = 255;
             DWORD flags = 0;
             if (GetLayeredWindowAttributes(window, nullptr, &alpha, &flags) &&
@@ -470,19 +462,16 @@ struct WindowsSmartRegionDetector::Impl
         }
 
         const QRect nativeGeometry = rectFromNative(nativeRect);
-        const QRect logicalGeometry =
-          toLogicalRect(nativeGeometry, screenMappings);
-        if (logicalGeometry.width() < 20 || logicalGeometry.height() < 20) {
-            return;
-        }
-        windows.append({ window, logicalGeometry });
+        windows.append({ window, nativeGeometry });
     }
 
-    const Window* windowAt(const QPoint& position) const
+    const Window* windowAt(const QPoint& nativePosition) const
     {
         const auto found = std::find_if(
-          windows.cbegin(), windows.cend(), [&position](const Window& window) {
-              return window.logicalGeometry.contains(position);
+          windows.cbegin(),
+          windows.cend(),
+          [&nativePosition](const Window& window) {
+              return window.nativeGeometry.contains(nativePosition);
           });
         return found == windows.cend() ? nullptr : &(*found);
     }
@@ -509,24 +498,31 @@ void WindowsSmartRegionDetector::refresh()
 QList<SmartRegionCandidate> WindowsSmartRegionDetector::candidatesAt(
   const QPoint& globalPosition)
 {
-    const Impl::Window* window = m_impl->windowAt(globalPosition);
+    const ScreenMapping* mapping =
+      SmartRegionGeometry::screenAt(globalPosition, m_impl->screenMappings);
+    if (!mapping) {
+        return {};
+    }
+    const QPoint nativePoint =
+      SmartRegionGeometry::toNativePoint(globalPosition, *mapping);
+    const Impl::Window* window = m_impl->windowAt(nativePoint);
     if (!window) {
         return {};
     }
 
-    const POINT nativePosition =
-      toNativePoint(globalPosition, m_impl->screenMappings);
+    const POINT nativePosition{ nativePoint.x(), nativePoint.y() };
     const QList<QRect> nativeElements =
       m_impl->automation.elementChainAt(window->handle, nativePosition);
     QList<QRect> logicalElements;
     logicalElements.reserve(nativeElements.size());
     for (const QRect& nativeElement : nativeElements) {
-        logicalElements.append(
-          toLogicalRect(nativeElement, m_impl->screenMappings));
+        logicalElements.append(toLogicalRect(nativeElement, *mapping));
     }
 
     return makeSmartRegionCandidateChain(
-      logicalElements, window->logicalGeometry, globalPosition);
+      logicalElements,
+      toLogicalRect(window->nativeGeometry, *mapping),
+      globalPosition);
 }
 
 bool WindowsSmartRegionDetector::accessibilityAvailable() const
