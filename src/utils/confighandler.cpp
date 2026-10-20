@@ -121,6 +121,7 @@ static QMap<class QString, QSharedPointer<ValueHandler>>
     OPTION("drawThickness"               ,LowerBoundedInt    ( 1, 3          )),
     OPTION("drawFontSize"                ,LowerBoundedInt    ( 1, 8          )),
     OPTION("drawCircleCounterSize"       ,LowerBoundedInt    ( 1, 1          )),
+    OPTION("drawCircleCounterOutline"    ,Bool               ( true          )),
     OPTION("drawPixelateSize"            ,LowerBoundedInt    ( 1, 2          )),
     OPTION("drawRectangleSize"           ,LowerBoundedInt    ( 1, 1          )),
     OPTION("drawMarkerSize"              ,LowerBoundedInt    ( 1, 5          )),
@@ -213,6 +214,7 @@ static QMap<QString, QSharedPointer<KeySequence>> recognizedShortcuts = {
     SHORTCUT("TYPE_SIZEINCREASE"        ,                           ),
     SHORTCUT("TYPE_SIZEDECREASE"        ,                           ),
     SHORTCUT("TYPE_CIRCLECOUNT"         ,                           ),
+    SHORTCUT("TYPE_CLOSE_ACTIVE_PIN_WINDOW"      ,   "Ctrl+Q"                ),
 };
 // clang-format on
 
@@ -379,8 +381,10 @@ void ConfigHandler::setToolSize(CaptureTool::Type toolType, int size)
         setDrawPixelateSize(size);
     } else if (toolType == CaptureTool::TYPE_CIRCLECOUNT) {
         setDrawCircleCounterSize(size);
-    } else if (toolType != CaptureTool::NONE) {
-        // All other tools are sharing the same size
+    } else {
+        // All other tools are sharing the same size. CaptureTool::NONE lands
+        // here too: no tool button is active, but the size still belongs to
+        // the shared bucket, which is what toolSize() returns for NONE.
         setDrawThickness(size);
     }
 }

@@ -204,6 +204,7 @@ CaptureWidget::CaptureWidget(const CaptureRequest& req,
         if (selectedScreen != nullptr && windowHandle()) {
             windowHandle()->setScreen(selectedScreen);
         }
+        m_selectedScreen = selectedScreen;
 #endif
     }
 
@@ -270,7 +271,6 @@ CaptureWidget::CaptureWidget(const CaptureRequest& req,
         updateCursor();
         m_toolSizeByKeyboard = 0;
         onToolSizeChanged(m_context.toolSize);
-        onToolSizeSettled(m_context.toolSize);
     });
 
     m_config.checkAndHandleError();
@@ -653,10 +653,10 @@ void CaptureWidget::uncheckActiveTool()
 void CaptureWidget::closeEvent(QCloseEvent* event)
 {
 #if !(defined(Q_OS_MACOS) || defined(Q_OS_WIN))
-    /* Wayland copy problem workaround: the copy
+    /* GNOME copy problem workaround, copy
        operation seems to work only when there
        is a visible window to retrieve the
-       data from. On GNOME and COSMIC, the GUI should
+       data from. On GNOME, the GUI should
        handle the copy operation, not the
        daemon.
     */
@@ -665,18 +665,17 @@ void CaptureWidget::closeEvent(QCloseEvent* event)
 
     if (m_captureDone && copyRequested) {
         DesktopInfo desktopInfo;
-        const bool needClipboardWorkaround =
+        const bool needGnomeWorkaround =
           desktopInfo.waylandDetected() &&
-          (desktopInfo.windowManager() == DesktopInfo::GNOME ||
-           desktopInfo.windowManager() == DesktopInfo::COSMIC);
+          desktopInfo.windowManager() == DesktopInfo::GNOME;
 
-        if (needClipboardWorkaround && !m_clipboardWorkaroundDone) {
+        if (needGnomeWorkaround && !m_clipboardWorkaroundDone) {
             event->ignore();
             m_clipboardWorkaroundDone = true;
             m_context.request.removeTask(CaptureRequest::COPY);
             AbstractLogger::info()
-              << "GNOME/COSMIC Wayland detected; keeping capture window "
-                 "alive until clipboard data is fetched.";
+              << "GNOME Wayland detected; keeping capture window alive until "
+                 "clipboard data is fetched.";
             saveToClipboardGnomeWorkaround(pixmap(), this);
             return;
         }
@@ -1254,6 +1253,13 @@ void CaptureWidget::moveEvent(QMoveEvent* e)
 {
     QWidget::moveEvent(e);
     m_context.widgetOffset = mapToGlobal(QPoint(0, 0));
+#if defined(Q_OS_UNIX) && !defined(Q_OS_MACOS)
+    // If a compositor moved the window to the wrong screen, move it back
+    if (m_context.fullscreen && m_selectedScreen &&
+        geometry().topLeft() != m_selectedScreen->geometry().topLeft()) {
+        move(m_selectedScreen->geometry().topLeft());
+    }
+#endif
 }
 
 void CaptureWidget::changeEvent(QEvent* e)
@@ -1732,6 +1738,14 @@ void CaptureWidget::onToolSizeChanged(int t)
 {
 
     m_context.toolSize = t;
+
+    // Persist the new size straight away. This was previously deferred until
+    // the NotifierBox finished hiding, which meant a size set from the side
+    // panel was never saved at all, since that path never shows the notifier,
+    // and a size set with the wheel or the keyboard was lost whenever the
+    // capture was completed before the notifier's timeout had elapsed.
+    m_config.setToolSize(activeButtonToolType(), t);
+
     CaptureTool* tool = activeButtonTool();
     if (tool && tool->showMousePreview()) {
         setCursor(Qt::BlankCursor);
@@ -1758,11 +1772,6 @@ void CaptureWidget::onToolSizeChanged(int t)
 
     // Force a repaint to prevent artifacting
     this->repaint();
-}
-
-void CaptureWidget::onToolSizeSettled(int size)
-{
-    m_config.setToolSize(activeButtonToolType(), size);
 }
 
 void CaptureWidget::setDrawColor(const QColor& c)

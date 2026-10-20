@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
 # cmake_policy(SET CMP0076 OLD)
 
-set(FLAMESHOT_VERSION 14.0.0)
+set(FLAMESHOT_VERSION 15.0.0)
 
 # Flameshot-org
 set(GIT_API_URL "https://api.github.com/repos/flameshot-org/flameshot/releases/latest")
@@ -30,6 +30,12 @@ endif()
 #Needed due to linker error with QtColorWidget
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
+# Control Flow Guard. Both flags are required: /guard:cf instruments the code,
+# /GUARD:CF marks the image. Above add_subdirectory() so vendored targets get it too.
+if(MSVC)
+  add_compile_options(/guard:cf)
+  add_link_options(/GUARD:CF)
+endif()
 
 # Dependency can be fetched via flatpak builder
 if(EXISTS "${CMAKE_SOURCE_DIR}/external/Qt-Color-Widgets/CMakeLists.txt")

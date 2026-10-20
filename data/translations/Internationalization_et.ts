@@ -302,7 +302,7 @@ Premeu Espai per obrir el calaix lateral.</translation>
     <message>
         <location filename="../../src/tools/circlecount/circlecounttool.cpp" line="69"/>
         <source>Circle Counter</source>
-        <translation type="unfinished"></translation>
+        <translation>Ümmargune loendur</translation>
     </message>
     <message>
         <location filename="../../src/tools/circlecount/circlecounttool.cpp" line="87"/>
@@ -410,7 +410,7 @@ Premeu Espai per obrir el calaix lateral.</translation>
     <message>
         <location filename="../../src/widgets/panel/colorgrabwidget.cpp" line="58"/>
         <source>Space or Right Click</source>
-        <translation type="unfinished"></translation>
+        <translation>Tühikuklahv või parem hiireklõps</translation>
     </message>
     <message>
         <location filename="../../src/widgets/panel/colorgrabwidget.cpp" line="59"/>
@@ -1063,7 +1063,7 @@ Palun lahenda vead käsitsi seadistusfailis.</translation>
     <message>
         <location filename="../../src/config/generalconf.cpp" line="303"/>
         <source>Show the side panel toggle button in the capture mode</source>
-        <translation type="unfinished"></translation>
+        <translation>Näita hõiverežiimis külgriba sisse- või väljalülitamise nuppu</translation>
     </message>
     <message>
         <location filename="../../src/config/generalconf.cpp" line="315"/>
@@ -1130,7 +1130,7 @@ Palun lahenda vead käsitsi seadistusfailis.</translation>
     <message>
         <location filename="../../src/config/generalconf.cpp" line="424"/>
         <source>Automatically unload from memory when it is not needed</source>
-        <translation type="unfinished"></translation>
+        <translation>Eemalda rakendus mälust niipea, kui seda seal enam vaja pole</translation>
     </message>
     <message>
         <location filename="../../src/config/generalconf.cpp" line="425"/>
@@ -1165,7 +1165,7 @@ Palun lahenda vead käsitsi seadistusfailis.</translation>
     <message>
         <location filename="../../src/config/generalconf.cpp" line="502"/>
         <source>Copy URL after uploading was successful</source>
-        <translation type="unfinished"></translation>
+        <translation>Peale üleslaadimise õnnestumist kopeeri võrguaadress</translation>
     </message>
     <message>
         <location filename="../../src/config/generalconf.cpp" line="514"/>
@@ -1939,7 +1939,7 @@ Valimiseks klõpsa</translation>
         <location filename="../../src/utils/screenshotsaver.cpp" line="69"/>
         <location filename="../../src/utils/screenshotsaver.cpp" line="362"/>
         <source>Error trying to save as </source>
-        <translation type="unfinished"></translation>
+        <translation>Viga salvestamisel: </translation>
     </message>
     <message>
         <location filename="../../src/main.cpp" line="251"/>
@@ -1949,7 +1949,7 @@ Valimiseks klõpsa</translation>
     <message>
         <location filename="../../src/main.cpp" line="268"/>
         <source>Powerful yet simple to use screenshot software.</source>
-        <translation type="unfinished"></translation>
+        <translation>Võimas, aga lihtsaltkasutatav ekraanitõmmistamise tarkvara.</translation>
     </message>
     <message>
         <location filename="../../src/main.cpp" line="269"/>
@@ -1973,7 +1973,7 @@ Valimiseks klõpsa</translation>
     <message>
         <location filename="../../src/main.cpp" line="280"/>
         <source>Configure</source>
-        <translation type="unfinished"></translation>
+        <translation>Seadista</translation>
     </message>
     <message>
         <source>Capture a single screen.</source>
@@ -1991,12 +1991,12 @@ Valimiseks klõpsa</translation>
     <message>
         <location filename="../../src/main.cpp" line="283"/>
         <source>Capture a screenshot of the specified monitor.</source>
-        <translation type="unfinished"></translation>
+        <translation>Tee ekraanitõmmis valitud monitorist.</translation>
     </message>
     <message>
         <location filename="../../src/main.cpp" line="288"/>
         <source>Existing directory or new file to save to</source>
-        <translation type="unfinished"></translation>
+        <translation>Olemasolev kaust või uus fail, kuhu tahad salvestada</translation>
     </message>
     <message>
         <location filename="../../src/main.cpp" line="291"/>
@@ -2021,7 +2021,7 @@ Valimiseks klõpsa</translation>
     <message>
         <location filename="../../src/main.cpp" line="303"/>
         <source>Screenshot region to select</source>
-        <translation type="unfinished"></translation>
+        <translation>Valitav ekraanitõmmise ala</translation>
     </message>
     <message>
         <location filename="../../src/main.cpp" line="306"/>
@@ -2031,32 +2031,32 @@ Valimiseks klõpsa</translation>
     <message>
         <location filename="../../src/main.cpp" line="310"/>
         <source>Accept capture as soon as a selection is made</source>
-        <translation type="unfinished"></translation>
+        <translation>Kinnita ekraanihõive niipea, kui valik on tehtud</translation>
     </message>
     <message>
         <location filename="../../src/main.cpp" line="312"/>
         <source>Enable or disable the trayicon</source>
-        <translation type="unfinished"></translation>
+        <translation>Lülita süsteemisalve ikoon sisse/välja</translation>
     </message>
     <message>
         <location filename="../../src/main.cpp" line="316"/>
         <source>Enable or disable run at startup</source>
-        <translation type="unfinished"></translation>
+        <translation>Lülita käivitamine sisselogimisel sisse/välja</translation>
     </message>
     <message>
         <location filename="../../src/main.cpp" line="320"/>
         <source>Enable or disable the notifications</source>
-        <translation type="unfinished"></translation>
+        <translation>Lülita teavitused sisse/välja</translation>
     </message>
     <message>
         <location filename="../../src/main.cpp" line="323"/>
         <source>Check the configuration for errors</source>
-        <translation type="unfinished"></translation>
+        <translation>Kontrolli seadistustest vigu</translation>
     </message>
     <message>
         <location filename="../../src/main.cpp" line="326"/>
         <source>Show the help message in the capture mode</source>
-        <translation type="unfinished"></translation>
+        <translation>Näita hõiverežiimis abiteadet</translation>
     </message>
     <message>
         <location filename="../../src/main.cpp" line="329"/>
@@ -2086,12 +2086,12 @@ Valimiseks klõpsa</translation>
     <message>
         <location filename="../../src/main.cpp" line="349"/>
         <source>Interactively select and edit the screenshot region</source>
-        <translation type="unfinished"></translation>
+        <translation>Vali ekraanitõmmise ala interaktiivset ja muuda seda</translation>
     </message>
     <message>
         <location filename="../../src/main.cpp" line="366"/>
         <source>Invalid delay, it must be a number greater than 0</source>
-        <translation type="unfinished"></translation>
+        <translation>Vigane viivituse kestus - väärtus peab olema suurem, kui 0</translation>
     </message>
     <message>
         <location filename="../../src/main.cpp" line="369"/>
@@ -2101,7 +2101,7 @@ Valimiseks klõpsa</translation>
     <message>
         <location filename="../../src/main.cpp" line="382"/>
         <source>Invalid path, must be an existing directory or a new file in an existing directory</source>
-        <translation type="unfinished"></translation>
+        <translation>Vigane asukoht - väärtus peab olema olemasolev kaust või uus fail olemasolevas kaustas</translation>
     </message>
     <message>
         <source>Define the screen to capture</source>
@@ -2110,12 +2110,12 @@ Valimiseks klõpsa</translation>
     <message>
         <location filename="../../src/main.cpp" line="344"/>
         <source>default: screen containing the cursor</source>
-        <translation type="unfinished"></translation>
+        <translation>vaikimisi: ekraan, kus kursor asub</translation>
     </message>
     <message>
         <location filename="../../src/main.cpp" line="345"/>
         <source>Screen number</source>
-        <translation type="unfinished"></translation>
+        <translation>Ekraani number</translation>
     </message>
     <message>
         <location filename="../../src/main.cpp" line="357"/>
@@ -2135,7 +2135,7 @@ You may need to escape the &apos;#&apos; sign as in &apos;\#FFF&apos;</source>
     <message>
         <location filename="../../src/main.cpp" line="368"/>
         <source>Invalid screen number, it must be non negative</source>
-        <translation type="unfinished"></translation>
+        <translation>Vigane ekraani number - väärtus ei tohi olla negatiivne</translation>
     </message>
     <message>
         <source>Invalid path, it must be a real path in the system</source>
@@ -2144,7 +2144,7 @@ You may need to escape the &apos;#&apos; sign as in &apos;\#FFF&apos;</source>
     <message>
         <location filename="../../src/main.cpp" line="395"/>
         <source>Invalid value, it must be defined as &apos;true&apos; or &apos;false&apos;</source>
-        <translation type="unfinished"></translation>
+        <translation>Vigane väärtus - lubatud on vaid tõeväärtused „true“ või „false“</translation>
     </message>
     <message>
         <location filename="../../src/tools/launcher/openwithprogram.cpp" line="30"/>
@@ -2159,12 +2159,12 @@ You may need to escape the &apos;#&apos; sign as in &apos;\#FFF&apos;</source>
     <message>
         <location filename="../../src/core/flameshot.cpp" line="168"/>
         <source>Requested screen exceeds screen count</source>
-        <translation type="unfinished"></translation>
+        <translation>Soovitud ekraaninumber on suurem, kui leiduvate ekraanide arv</translation>
     </message>
     <message>
         <location filename="../../src/core/flameshot.cpp" line="418"/>
         <source>Full screen screenshot pinned to screen</source>
-        <translation type="unfinished"></translation>
+        <translation>Ekraanile kinnitatud tõmmis täisekraanivaatest</translation>
     </message>
     <message>
         <source>URL copied to clipboard.</source>
@@ -2296,7 +2296,7 @@ You may need to escape the &apos;#&apos; sign as in &apos;\#FFF&apos;</source>
     <message>
         <location filename="../../src/tools/rectangle/rectangletool.cpp" line="23"/>
         <source>Rectangle</source>
-        <translation type="unfinished"></translation>
+        <translation>Ristkülik</translation>
     </message>
     <message>
         <location filename="../../src/tools/rectangle/rectangletool.cpp" line="33"/>
@@ -2309,12 +2309,12 @@ You may need to escape the &apos;#&apos; sign as in &apos;\#FFF&apos;</source>
     <message>
         <location filename="../../src/tools/redo/redotool.cpp" line="24"/>
         <source>Redo</source>
-        <translation type="unfinished"></translation>
+        <translation>Korda tegevust</translation>
     </message>
     <message>
         <location filename="../../src/tools/redo/redotool.cpp" line="34"/>
         <source>Redo the next modification</source>
-        <translation type="unfinished"></translation>
+        <translation>Korda järgmist muudatust</translation>
     </message>
 </context>
 <context>
@@ -2343,17 +2343,17 @@ You may need to escape the &apos;#&apos; sign as in &apos;\#FFF&apos;</source>
     <message>
         <location filename="../../src/utils/screengrabber.cpp" line="61"/>
         <source>Could not locate the `org.freedesktop.portal.Desktop` service</source>
-        <translation type="unfinished"></translation>
+        <translation>„org.freedesktop.portal.Desktop“ teenuse tuvastamine ei õnnestunud</translation>
     </message>
     <message>
         <location filename="../../src/utils/screengrabber.cpp" line="109"/>
         <source>Screenshot portal timed out after 30 seconds</source>
-        <translation type="unfinished"></translation>
+        <translation>Ekraanitõmmise portaali päring aegus 30 sekundi möödumisel</translation>
     </message>
     <message>
         <location filename="../../src/utils/screengrabber.cpp" line="132"/>
         <source>FreeDesktop portal screenshot size: %1x%2, DPR: %3</source>
-        <translation type="unfinished"></translation>
+        <translation>FreeDesktopi portaali ekraanitõmmise suurus: %1x%2, DPR: %3</translation>
     </message>
     <message>
         <location filename="../../src/utils/screengrabber.cpp" line="159"/>
@@ -2363,17 +2363,17 @@ You may need to escape the &apos;#&apos; sign as in &apos;\#FFF&apos;</source>
     <message>
         <location filename="../../src/utils/screengrabber.cpp" line="177"/>
         <source>Screenshot already in progress, please wait for the current screenshot to complete</source>
-        <translation type="unfinished"></translation>
+        <translation>Ekraanitõmmise tegemine on pooleli, palun oota kuni see saab tehtud</translation>
     </message>
     <message>
         <location filename="../../src/utils/screengrabber.cpp" line="202"/>
         <source>Screenshot cancelled</source>
-        <translation type="unfinished"></translation>
+        <translation>Ekraanitõmmise tegemine on katkestatud</translation>
     </message>
     <message>
         <location filename="../../src/utils/screengrabber.cpp" line="218"/>
         <source>Unable to get current screen</source>
-        <translation type="unfinished"></translation>
+        <translation>Praegu kasutatava ekraani tuvastamine ei õnnestu</translation>
     </message>
     <message>
         <location filename="../../src/utils/screengrabber.cpp" line="237"/>
@@ -2386,18 +2386,18 @@ You may need to escape the &apos;#&apos; sign as in &apos;\#FFF&apos;</source>
     <message>
         <location filename="../../src/utils/screengrabber.cpp" line="373"/>
         <source>=== All Screen Information ===</source>
-        <translation type="unfinished"></translation>
+        <translation>=== Kõikide ekraanide teave ===</translation>
     </message>
     <message>
         <location filename="../../src/utils/screengrabber.cpp" line="376"/>
         <location filename="../../src/utils/screengrabber.cpp" line="551"/>
         <source>Screen %1: %2</source>
-        <translation type="unfinished"></translation>
+        <translation>Ekraan %1: %2</translation>
     </message>
     <message>
         <location filename="../../src/utils/screengrabber.cpp" line="377"/>
         <source>  Logical geometry: %1x%2+%3+%4</source>
-        <translation type="unfinished"></translation>
+        <translation>  Loogiline geomeetria: %1x%2+%3+%4</translation>
     </message>
     <message>
         <location filename="../../src/utils/screengrabber.cpp" line="382"/>
@@ -2407,17 +2407,17 @@ You may need to escape the &apos;#&apos; sign as in &apos;\#FFF&apos;</source>
     <message>
         <location filename="../../src/utils/screengrabber.cpp" line="488"/>
         <source>Total logical dimensions: %1x%2 (min: %3,%4)</source>
-        <translation type="unfinished"></translation>
+        <translation>Loogilised mõõdud kokku: %1x%2 (min: %3,%4)</translation>
     </message>
     <message>
         <location filename="../../src/utils/screengrabber.cpp" line="493"/>
         <source>Screenshot dimensions: %1x%2</source>
-        <translation type="unfinished"></translation>
+        <translation>Ekraanitõmmise mõõdud: %1x%2</translation>
     </message>
     <message>
         <location filename="../../src/utils/screengrabber.cpp" line="509"/>
         <source>Screenshot scale factors: X=%1 Y=%2</source>
-        <translation type="unfinished"></translation>
+        <translation>Ekraanitõmmise mõõtkava tegurid: X=%1 Y=%2</translation>
     </message>
     <message>
         <location filename="../../src/utils/screengrabber.cpp" line="542"/>
@@ -2427,22 +2427,22 @@ You may need to escape the &apos;#&apos; sign as in &apos;\#FFF&apos;</source>
     <message>
         <location filename="../../src/utils/screengrabber.cpp" line="552"/>
         <source>  Logical geometry: %1x%2+%3+%4 DPR: %5</source>
-        <translation type="unfinished"></translation>
+        <translation>  Loogiline geomeetria: %1x%2+%3+%4 DPR: %5</translation>
     </message>
     <message>
         <location filename="../../src/utils/screengrabber.cpp" line="558"/>
         <source>  Crop rect in screenshot: %1x%2+%3+%4</source>
-        <translation type="unfinished"></translation>
+        <translation>  Ekraanitõmmise kadreerimise ristkülik: %1x%2+%3+%4</translation>
     </message>
     <message>
         <location filename="../../src/utils/screengrabber.cpp" line="571"/>
         <source>Crop rect is empty, returning full screenshot</source>
-        <translation type="unfinished"></translation>
+        <translation>Kadreerimise ristkülik on tühi, kasutan täisekraanivaates ekraanitõmmist</translation>
     </message>
     <message>
         <location filename="../../src/utils/screengrabber.cpp" line="587"/>
         <source>Scaling screenshot to: %1 %2</source>
-        <translation type="unfinished"></translation>
+        <translation>Skaneerin ekraanitõmmise uueks mõõduks: : %1 %2</translation>
     </message>
 </context>
 <context>
@@ -2460,17 +2460,17 @@ You may need to escape the &apos;#&apos; sign as in &apos;\#FFF&apos;</source>
     <message>
         <location filename="../../build/_deps/kdsingleapplication-src/examples/widgetsingleapplication/secondaryinstancewidget.cpp" line="29"/>
         <source>Type something here...</source>
-        <translation type="unfinished"></translation>
+        <translation>Kirjuta siia midagi…</translation>
     </message>
     <message>
         <location filename="../../build/_deps/kdsingleapplication-src/examples/widgetsingleapplication/secondaryinstancewidget.cpp" line="31"/>
         <source>&amp;Send</source>
-        <translation type="unfinished"></translation>
+        <translation>&amp;Saada</translation>
     </message>
     <message>
         <location filename="../../build/_deps/kdsingleapplication-src/examples/widgetsingleapplication/secondaryinstancewidget.cpp" line="54"/>
         <source>Error sending message</source>
-        <translation type="unfinished"></translation>
+        <translation>Viga sõnumi saatmisel</translation>
     </message>
     <message>
         <location filename="../../build/_deps/kdsingleapplication-src/examples/widgetsingleapplication/secondaryinstancewidget.cpp" line="55"/>
@@ -2496,7 +2496,7 @@ You may need to escape the &apos;#&apos; sign as in &apos;\#FFF&apos;</source>
     <message>
         <location filename="../../src/config/setshortcutwidget.cpp" line="20"/>
         <source>Set Shortcut</source>
-        <translation type="unfinished"></translation>
+        <translation>Seadista kiirklahv</translation>
     </message>
     <message>
         <location filename="../../src/config/setshortcutwidget.cpp" line="26"/>
@@ -2517,7 +2517,7 @@ You may need to escape the &apos;#&apos; sign as in &apos;\#FFF&apos;</source>
         <location filename="../../src/config/setshortcutwidget.cpp" line="50"/>
         <location filename="../../src/config/setshortcutwidget.cpp" line="55"/>
         <source>Flameshot must be restarted for changes to take effect.</source>
-        <translation type="unfinished"></translation>
+        <translation>Muudatuste jõustumiseks palun käivita Flameshot uuesti.</translation>
     </message>
 </context>
 <context>
@@ -2555,7 +2555,7 @@ You may need to escape the &apos;#&apos; sign as in &apos;\#FFF&apos;</source>
     <message>
         <location filename="../../src/config/shortcutswidget.cpp" line="183"/>
         <source>Grab a color from the screen</source>
-        <translation type="unfinished"></translation>
+        <translation>Kraapsa värv ekraanilt</translation>
     </message>
     <message>
         <location filename="../../src/config/shortcutswidget.cpp" line="184"/>
@@ -2640,24 +2640,24 @@ You may need to escape the &apos;#&apos; sign as in &apos;\#FFF&apos;</source>
     <message>
         <location filename="../../src/config/shortcutswidget.cpp" line="268"/>
         <source>It seems, that Windows forces to open its screenshot tool when the &apos;Print Screen&apos; key is pressed. Would you like to disable this so that Flameshot can use the &apos;Print Screen&apos; key?</source>
-        <translation type="unfinished"></translation>
+        <translation>Tundub, et Windows avab „Print Screen“ klahvi vajutamisel sundkorras oma ekraanitõmmistustarkvara. Kas tahaksid selle lülitada välja ja „Print Screen“ klahvi vajutamisel käivituks Flameshot?</translation>
     </message>
     <message>
         <location filename="../../src/config/shortcutswidget.cpp" line="273"/>
         <source>Flameshot must be restarted for changes to take effect.</source>
-        <translation type="unfinished"></translation>
+        <translation>Muudatuste jõustumiseks palun käivita Flameshot uuesti.</translation>
     </message>
     <message>
         <location filename="../../src/config/shortcutswidget.cpp" line="278"/>
         <source>No, don&apos;t ask again</source>
-        <translation type="unfinished"></translation>
+        <translation>Ei, ära küsi uuesti</translation>
     </message>
     <message>
         <location filename="../../src/config/shortcutswidget.cpp" line="286"/>
         <location filename="../../src/config/shortcutswidget.cpp" line="333"/>
         <location filename="../../src/config/shortcutswidget.cpp" line="343"/>
         <source>The registry could not be changed!</source>
-        <translation type="unfinished"></translation>
+        <translation>Registri muutmine ei õnnestunud!</translation>
     </message>
     <message>
         <location filename="../../src/config/shortcutswidget.cpp" line="317"/>
@@ -2667,13 +2667,13 @@ You may need to escape the &apos;#&apos; sign as in &apos;\#FFF&apos;</source>
     <message>
         <location filename="../../src/config/shortcutswidget.cpp" line="321"/>
         <source>After registering, you can select Flameshot as the default screenshot application in Windows Settings.</source>
-        <translation type="unfinished"></translation>
+        <translation>Peale registreerimist saad Flameshoti valida Windowsi seadistustest vaikimisi ekraanitõmmistustarkvarana.</translation>
     </message>
     <message>
         <location filename="../../src/config/shortcutswidget.cpp" line="334"/>
         <location filename="../../src/config/shortcutswidget.cpp" line="344"/>
         <source>You may start Flameshot as administrator ONCE and try again!</source>
-        <translation type="unfinished"></translation>
+        <translation>Sa võid ÜKS kord käivitada Flameshoti peakasutaja õigustes ja seda uuesti proovida!</translation>
     </message>
     <message>
         <source>Delete current tool</source>
@@ -2708,12 +2708,12 @@ You may need to escape the &apos;#&apos; sign as in &apos;\#FFF&apos;</source>
     <message>
         <location filename="../../src/widgets/panel/sidepanelwidget.cpp" line="37"/>
         <source>Active tool size: </source>
-        <translation type="unfinished"></translation>
+        <translation>Aktiivse tarviku suurus: </translation>
     </message>
     <message>
         <location filename="../../src/widgets/panel/sidepanelwidget.cpp" line="57"/>
         <source>Active Color: </source>
-        <translation type="unfinished"></translation>
+        <translation>Aktiivne värvr: </translation>
     </message>
     <message>
         <location filename="../../src/widgets/panel/sidepanelwidget.cpp" line="78"/>
@@ -2723,7 +2723,7 @@ You may need to escape the &apos;#&apos; sign as in &apos;\#FFF&apos;</source>
     <message>
         <location filename="../../src/widgets/panel/sidepanelwidget.cpp" line="85"/>
         <source>Display grid</source>
-        <translation type="unfinished"></translation>
+        <translation>Kuva ruudustikku</translation>
     </message>
 </context>
 <context>
@@ -2731,12 +2731,12 @@ You may need to escape the &apos;#&apos; sign as in &apos;\#FFF&apos;</source>
     <message>
         <location filename="../../src/tools/sizedecrease/sizedecreasetool.cpp" line="38"/>
         <source>Decrease Tool Size</source>
-        <translation type="unfinished"></translation>
+        <translation>Vähenda tarviku suurust</translation>
     </message>
     <message>
         <location filename="../../src/tools/sizedecrease/sizedecreasetool.cpp" line="48"/>
         <source>Decrease the size of the other tools</source>
-        <translation type="unfinished"></translation>
+        <translation>Vähenda muude tarvikute suurust</translation>
     </message>
 </context>
 <context>
@@ -2744,12 +2744,12 @@ You may need to escape the &apos;#&apos; sign as in &apos;\#FFF&apos;</source>
     <message>
         <location filename="../../src/tools/sizeincrease/sizeincreasetool.cpp" line="38"/>
         <source>Increase Tool Size</source>
-        <translation type="unfinished"></translation>
+        <translation>Suurenda tarviku suurust</translation>
     </message>
     <message>
         <location filename="../../src/tools/sizeincrease/sizeincreasetool.cpp" line="48"/>
         <source>Increase the size of the other tools</source>
-        <translation type="unfinished"></translation>
+        <translation>Suurenda muude tarvikute suurust</translation>
     </message>
 </context>
 <context>
@@ -2995,12 +2995,12 @@ You may need to escape the &apos;#&apos; sign as in &apos;\#FFF&apos;</source>
     <message>
         <location filename="../../src/config/uicoloreditor.cpp" line="100"/>
         <source>Select a Button to modify it</source>
-        <translation type="unfinished"></translation>
+        <translation>Vali muudetav nupp</translation>
     </message>
     <message>
         <location filename="../../src/config/uicoloreditor.cpp" line="110"/>
         <source>Main Color</source>
-        <translation type="unfinished"></translation>
+        <translation>Põhivärv</translation>
     </message>
     <message>
         <location filename="../../src/config/uicoloreditor.cpp" line="114"/>
@@ -3010,7 +3010,7 @@ You may need to escape the &apos;#&apos; sign as in &apos;\#FFF&apos;</source>
     <message>
         <location filename="../../src/config/uicoloreditor.cpp" line="125"/>
         <source>Contrast Color</source>
-        <translation type="unfinished"></translation>
+        <translation>Kontrastvärv</translation>
     </message>
     <message>
         <location filename="../../src/config/uicoloreditor.cpp" line="130"/>
@@ -3023,7 +3023,7 @@ You may need to escape the &apos;#&apos; sign as in &apos;\#FFF&apos;</source>
     <message>
         <location filename="../../src/tools/undo/undotool.cpp" line="24"/>
         <source>Undo</source>
-        <translation type="unfinished"></translation>
+        <translation>Võta tegevus tagasi</translation>
     </message>
     <message>
         <location filename="../../src/tools/undo/undotool.cpp" line="34"/>
@@ -3059,7 +3059,7 @@ You may need to escape the &apos;#&apos; sign as in &apos;\#FFF&apos;</source>
     <message>
         <location filename="../../src/widgets/uploadhistory.ui" line="14"/>
         <source>Upload History</source>
-        <translation type="unfinished"></translation>
+        <translation>Laadi ajalugu üles</translation>
     </message>
     <message>
         <location filename="../../src/widgets/uploadhistory.cpp" line="60"/>
@@ -3072,7 +3072,7 @@ You may need to escape the &apos;#&apos; sign as in &apos;\#FFF&apos;</source>
     <message>
         <location filename="../../src/widgets/uploadlineitem.ui" line="20"/>
         <source>Form</source>
-        <translation type="unfinished"></translation>
+        <translation>Vorm</translation>
     </message>
     <message>
         <location filename="../../src/widgets/uploadlineitem.ui" line="49"/>
