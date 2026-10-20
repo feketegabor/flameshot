@@ -23,6 +23,10 @@ on:
 env:
   PRODUCT: flameshot
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   windows-pack:
     name: VS 2022 ${{ matrix.config.arch }}-${{ matrix.type }}
@@ -180,6 +184,7 @@ jobs:
         if:  matrix.type == 'installer'
         uses: actions/upload-artifact@v7
         with:
+          retention-days: 7
           name: ${{ env.PRODUCT }}-${{ env.VER_INFO }}-artifact-win-${{ matrix.config.arch }}-${{ matrix.type }}
           path: |
             ${{ github.workspace }}/build/Package/installer/Flameshot-${{ env.VERSION }}-${{ matrix.config.pak_arch }}.msi
@@ -190,6 +195,7 @@ jobs:
         if:  matrix.type == 'portable'
         uses: actions/upload-artifact@v7
         with:
+          retention-days: 7
           name: ${{ env.PRODUCT }}-${{ env.VER_INFO }}-artifact-win-${{ matrix.config.arch }}-${{ matrix.type }}
           path: |
             ${{ github.workspace }}/build/Package/portable/flameshot-${{ env.VERSION }}-${{ matrix.config.pak_arch }}.zip

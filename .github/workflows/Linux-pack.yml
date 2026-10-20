@@ -28,6 +28,10 @@ env:
   # building tool: https://github.com/flameshot-org/packpack
   PACKPACK_REPO: flameshot-org/packpack
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   deb-pack:
     name: Build deb on ${{ matrix.dist.name }} ${{ matrix.dist.arch }}
@@ -165,6 +169,7 @@ jobs:
       - name: Artifact Upload
         uses: actions/upload-artifact@v7
         with:
+          retention-days: 7
           name: ${{ env.PRODUCT }}-${{ env.VER_INFO }}-artifact-${{ matrix.dist.name }}-${{ matrix.dist.arch }}
           path: |
             ${{ github.workspace }}/build/${{ env.PRODUCT }}-*-${{ env.RELEASE }}.${{ matrix.dist.name }}.${{ matrix.dist.arch }}.deb
@@ -282,6 +287,7 @@ jobs:
         if: matrix.dist.os == 'fedora'
         uses: actions/upload-artifact@v7
         with:
+          retention-days: 7
           name: ${{ env.PRODUCT }}-${{ env.VER_INFO }}-artifact-${{ matrix.dist.name }}-${{ matrix.dist.arch }}
           path: |
             ${{ github.workspace }}/build/
@@ -291,6 +297,7 @@ jobs:
         if: matrix.dist.os == 'opensuse-leap'
         uses: actions/upload-artifact@v7
         with:
+          retention-days: 7
           name: ${{ env.PRODUCT }}-${{ env.VER_INFO }}-artifact-${{ matrix.dist.name }}-${{ matrix.dist.arch }}
           path: |
             ${{ github.workspace }}/build/${{ env.PRODUCT }}-*-lp${{ matrix.dist.symbol }}.${{ matrix.dist.arch }}.rpm
@@ -405,6 +412,7 @@ jobs:
       - name: Artifact Upload
         uses: actions/upload-artifact@v7
         with:
+          retention-days: 7
           name: ${{ env.PRODUCT }}-${{ env.VER_INFO }}-artifact-appimage-x86_64
           path: |
             ${{ github.workspace }}/Flameshot-*.x86_64.AppImage
@@ -452,8 +460,11 @@ jobs:
           echo "GIT_HASH=${git_hash}" >> $GITHUB_ENV
 
       - name: Update flatpak manifest with commit SHA
+        env:
+          SOURCE_REPOSITORY: ${{ github.event.pull_request.head.repo.clone_url || format('{0}/{1}.git', github.server_url, github.repository) }}
         run: |
           git_hash=$(git rev-parse HEAD)
+          sed -i "s|url: https://github.com/flameshot-org/flameshot.git|url: ${SOURCE_REPOSITORY}|" packaging/flatpak/org.flameshot.Flameshot.yml
           sed -i "s/branch: master/commit: ${git_hash}/" packaging/flatpak/org.flameshot.Flameshot.yml
           echo "=======FLATPAK MANIFEST========"
           cat packaging/flatpak/org.flameshot.Flameshot.yml
@@ -485,6 +496,7 @@ jobs:
       - name: Artifact Upload
         uses: actions/upload-artifact@v7
         with:
+          retention-days: 7
           name: ${{ env.PRODUCT }}-${{ env.VER_INFO }}-artifact-flatpak-x86_64
           path: |
             ${{ github.workspace }}/org.flameshot.Flameshot-*.x86_64.flatpak
@@ -548,6 +560,7 @@ jobs:
       - name: Artifact Upload
         uses: actions/upload-artifact@v7
         with:
+          retention-days: 7
           name: ${{ env.PRODUCT }}-${{ env.VER_INFO }}-artifact-snap-x86_64
           path: |
             ${{ github.workspace }}/build/${{ env.PRODUCT }}-*-${{ env.RELEASE }}.amd64.snap

@@ -22,6 +22,10 @@ env:
   PRODUCT: flameshot
   MACOSX_DEPLOYMENT_TARGET: "14.0"
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   dmg-pack:
     name: Build dmg on ${{ matrix.dist.os }} ${{ matrix.dist.arch }}
@@ -110,6 +114,9 @@ jobs:
         run: |
           cmake --build "${DIR_BUILD}"
 
+      - name: Test
+        run: ctest --test-dir "${DIR_BUILD}" --output-on-failure
+
       - name: Inspect resulting executable
         run: |
           otool -l "${DIR_BUILD}/src/flameshot.app/Contents/MacOS/flameshot" | \
@@ -123,6 +130,7 @@ jobs:
       - name: Artifact Upload
         uses: actions/upload-artifact@v7
         with:
+          retention-days: 7
           name: ${{ env.PRODUCT }}-${{ env.VER_INFO }}-artifact-macos-${{ matrix.dist.arch }}
           path: ${{ github.workspace }}/build/src/Flameshot-${{ env.VERSION }}.dmg
           overwrite: true
