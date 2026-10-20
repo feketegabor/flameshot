@@ -117,7 +117,7 @@
     <message>
         <location filename="../../src/widgets/capturelauncher.cpp" line="32"/>
         <source>Rectangular Region</source>
-        <translation>方形区域</translation>
+        <translation>矩形区域</translation>
     </message>
     <message>
         <location filename="../../src/widgets/capturelauncher.cpp" line="38"/>
@@ -127,12 +127,12 @@
     <message>
         <location filename="../../src/widgets/capturelauncher.cpp" line="41"/>
         <source>Full Screen</source>
-        <translation type="unfinished"></translation>
+        <translation>全屏</translation>
     </message>
     <message>
         <location filename="../../src/widgets/capturelauncher.cpp" line="46"/>
         <source>Monitor %1: %2 (%3x%4)</source>
-        <translation type="unfinished"></translation>
+        <translation>显示器 %1: %2 (%3x%4)</translation>
     </message>
     <message>
         <source>Full Screen (All Monitors)</source>
@@ -193,7 +193,7 @@
         <location filename="../../src/widgets/capturelauncher.ui" line="71"/>
         <location filename="../../build/src/flameshot_autogen/include/ui_capturelauncher.h" line="184"/>
         <source>Monitor:</source>
-        <translation type="unfinished"></translation>
+        <translation>显示器:</translation>
     </message>
     <message>
         <location filename="../../src/widgets/capturelauncher.ui" line="87"/>
@@ -456,7 +456,7 @@ Press Space to open the side panel.</source>
     <message>
         <location filename="../../src/config/colorpickereditor.cpp" line="74"/>
         <source>Delete</source>
-        <translation>刪除</translation>
+        <translation>删除</translation>
     </message>
     <message>
         <location filename="../../src/config/colorpickereditor.cpp" line="76"/>
@@ -759,7 +759,7 @@ Please solve them manually in the configuration file.</source>
     <message>
         <location filename="../../src/config/filenameeditor.cpp" line="29"/>
         <source>Edit:</source>
-        <translation>编辑器:</translation>
+        <translation>编辑：</translation>
     </message>
     <message>
         <location filename="../../src/config/filenameeditor.cpp" line="31"/>
@@ -1353,7 +1353,7 @@ Please solve them manually in the configuration file.</source>
     <message>
         <location filename="../../src/config/generalconf.cpp" line="795"/>
         <source>Set geometry display timeout (ms)</source>
-        <translation>设置几何显示时间(毫秒）</translation>
+        <translation>设置几何显示时间（毫秒）</translation>
     </message>
     <message>
         <location filename="../../src/config/generalconf.cpp" line="803"/>
@@ -1418,7 +1418,7 @@ Please solve them manually in the configuration file.</source>
     <message>
         <location filename="../../src/config/generalconf.cpp" line="872"/>
         <source>Insecure Pixelate</source>
-        <translation>不安全Pixelate</translation>
+        <translation>不安全的像素化</translation>
     </message>
     <message>
         <location filename="../../src/config/generalconf.cpp" line="874"/>
@@ -1428,22 +1428,22 @@ Please solve them manually in the configuration file.</source>
     <message>
         <location filename="../../src/config/generalconf.cpp" line="929"/>
         <source>Capture active monitor (skip monitor selection)</source>
-        <translation type="unfinished"></translation>
+        <translation>捕获当前显示器（跳过选择）</translation>
     </message>
     <message>
         <location filename="../../src/config/generalconf.cpp" line="931"/>
         <source>Automatically capture the monitor where the cursor is located instead of showing the monitor selection dialog. This feature is not supported on Wayland.</source>
-        <translation type="unfinished"></translation>
+        <translation>自动捕获鼠标所在显示器，跳过显示器选择对话框。此功能在 Wayland 上不支持。</translation>
     </message>
     <message>
         <location filename="../../src/config/generalconf.cpp" line="952"/>
         <source>Use legacy X11 screenshot method (deprecated)</source>
-        <translation type="unfinished"></translation>
+        <translation>使用旧版 X11 截图方法（已弃用）</translation>
     </message>
     <message>
         <location filename="../../src/config/generalconf.cpp" line="954"/>
         <source>Bypass the freedesktop portal and use Qt&apos;s native X11 screen capture. Enable this if your window manager lacks xdg-desktop-portal (e.g. xmonad, i3). Only effective on X11; ignored on Wayland.</source>
-        <translation type="unfinished"></translation>
+        <translation>绕过 freedesktop 门户，改用 Qt 原生的 X11 屏幕捕获。如果你的窗口管理器没有 xdg-desktop-portal（例如 xmonad、i3），请启用此选项。仅在 X11 下生效，在 Wayland 上会被忽略。</translation>
     </message>
 </context>
 <context>
@@ -1833,7 +1833,8 @@ Please solve them manually in the configuration file.</source>
         <location filename="../../src/utils/monitorpreview.cpp" line="31"/>
         <source>Monitor %1: %2
 Click to select</source>
-        <translation type="unfinished"></translation>
+        <translation>显示器 %1: %2
+点击以选择</translation>
     </message>
 </context>
 <context>
@@ -1945,7 +1946,7 @@ Click to select</source>
     <message>
         <location filename="../../build/_deps/kdsingleapplication-src/examples/widgetsingleapplication/primaryinstancewidget.cpp" line="22"/>
         <source>&lt;b&gt;Primary instance.&lt;/b&gt; Messages received from secondaries:</source>
-        <translation>&lt;b&gt;主要实例。&lt;/b&gt;从secondary收到的消息：</translation>
+        <translation>&lt;b&gt;主实例。&lt;/b&gt;从次级实例收到的消息：</translation>
     </message>
 </context>
 <context>
@@ -2165,7 +2166,7 @@ Click to select</source>
     <message>
         <location filename="../../src/main.cpp" line="349"/>
         <source>Interactively select and edit the screenshot region</source>
-        <translation type="unfinished"></translation>
+        <translation>手动选择并编辑截图区域</translation>
     </message>
     <message>
         <location filename="../../src/main.cpp" line="366"/>
@@ -2452,37 +2453,37 @@ You may need to escape the &apos;#&apos; sign as in &apos;\#FFF&apos;</source>
     <message>
         <location filename="../../src/utils/screengrabber.cpp" line="61"/>
         <source>Could not locate the `org.freedesktop.portal.Desktop` service</source>
-        <translation type="unfinished"></translation>
+        <translation>无法找到 org.freedesktop.portal.Desktop 服务</translation>
     </message>
     <message>
         <location filename="../../src/utils/screengrabber.cpp" line="109"/>
         <source>Screenshot portal timed out after 30 seconds</source>
-        <translation type="unfinished"></translation>
+        <translation>截图服务在 30 秒后超时</translation>
     </message>
     <message>
         <location filename="../../src/utils/screengrabber.cpp" line="132"/>
         <source>FreeDesktop portal screenshot size: %1x%2, DPR: %3</source>
-        <translation type="unfinished"></translation>
+        <translation>FreeDesktop 截图服务尺寸：%1x%2，DPR：%3</translation>
     </message>
     <message>
         <location filename="../../src/utils/screengrabber.cpp" line="159"/>
         <source>Capture Active Monitor is not supported on Wayland due to Wayland security model.</source>
-        <translation type="unfinished"></translation>
+        <translation>由于 Wayland 的安全模型，「捕获活动显示器」功能在 Wayland 上不受支持。</translation>
     </message>
     <message>
         <location filename="../../src/utils/screengrabber.cpp" line="177"/>
         <source>Screenshot already in progress, please wait for the current screenshot to complete</source>
-        <translation type="unfinished"></translation>
+        <translation>截图已在进行中，请等待当前截图完成</translation>
     </message>
     <message>
         <location filename="../../src/utils/screengrabber.cpp" line="202"/>
         <source>Screenshot cancelled</source>
-        <translation type="unfinished"></translation>
+        <translation>取消截图</translation>
     </message>
     <message>
         <location filename="../../src/utils/screengrabber.cpp" line="218"/>
         <source>Unable to get current screen</source>
-        <translation type="unfinished"></translation>
+        <translation>无法获取当前屏幕</translation>
     </message>
     <message>
         <location filename="../../src/utils/screengrabber.cpp" line="237"/>
@@ -2495,63 +2496,63 @@ You may need to escape the &apos;#&apos; sign as in &apos;\#FFF&apos;</source>
     <message>
         <location filename="../../src/utils/screengrabber.cpp" line="373"/>
         <source>=== All Screen Information ===</source>
-        <translation type="unfinished"></translation>
+        <translation>=== 所有屏幕信息 ===</translation>
     </message>
     <message>
         <location filename="../../src/utils/screengrabber.cpp" line="376"/>
         <location filename="../../src/utils/screengrabber.cpp" line="551"/>
         <source>Screen %1: %2</source>
-        <translation type="unfinished"></translation>
+        <translation>屏幕 %1: %2</translation>
     </message>
     <message>
         <location filename="../../src/utils/screengrabber.cpp" line="377"/>
         <source>  Logical geometry: %1x%2+%3+%4</source>
-        <translation type="unfinished"></translation>
+        <translation>  逻辑尺寸：%1x%2+%3+%4</translation>
     </message>
     <message>
         <location filename="../../src/utils/screengrabber.cpp" line="382"/>
         <source>  DPR: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>  设备像素比：%1</translation>
     </message>
     <message>
         <location filename="../../src/utils/screengrabber.cpp" line="488"/>
         <source>Total logical dimensions: %1x%2 (min: %3,%4)</source>
-        <translation type="unfinished"></translation>
+        <translation>总逻辑尺寸：%1x%2（最小：%3,%4）</translation>
     </message>
     <message>
         <location filename="../../src/utils/screengrabber.cpp" line="493"/>
         <source>Screenshot dimensions: %1x%2</source>
-        <translation type="unfinished"></translation>
+        <translation>截图尺寸：%1x%2</translation>
     </message>
     <message>
         <location filename="../../src/utils/screengrabber.cpp" line="509"/>
         <source>Screenshot scale factors: X=%1 Y=%2</source>
-        <translation type="unfinished"></translation>
+        <translation>截图缩放比例：X=%1 Y=%2</translation>
     </message>
     <message>
         <location filename="../../src/utils/screengrabber.cpp" line="542"/>
         <source>Calculated crop position for mixed DPI: X=%1 Y=%2</source>
-        <translation type="unfinished"></translation>
+        <translation>混合 DPI 下的裁剪位置（计算值）：X=%1 Y=%2</translation>
     </message>
     <message>
         <location filename="../../src/utils/screengrabber.cpp" line="552"/>
         <source>  Logical geometry: %1x%2+%3+%4 DPR: %5</source>
-        <translation type="unfinished"></translation>
+        <translation>  逻辑几何：%1x%2+%3+%4 DPR：%5</translation>
     </message>
     <message>
         <location filename="../../src/utils/screengrabber.cpp" line="558"/>
         <source>  Crop rect in screenshot: %1x%2+%3+%4</source>
-        <translation type="unfinished"></translation>
+        <translation>  截图中的裁剪矩形：%1x%2+%3+%4</translation>
     </message>
     <message>
         <location filename="../../src/utils/screengrabber.cpp" line="571"/>
         <source>Crop rect is empty, returning full screenshot</source>
-        <translation type="unfinished"></translation>
+        <translation>未选择裁剪区域，将使用完整截图</translation>
     </message>
     <message>
         <location filename="../../src/utils/screengrabber.cpp" line="587"/>
         <source>Scaling screenshot to: %1 %2</source>
-        <translation type="unfinished"></translation>
+        <translation>正在将截图缩放至：%1 %2</translation>
     </message>
 </context>
 <context>
@@ -2564,7 +2565,7 @@ You may need to escape the &apos;#&apos; sign as in &apos;\#FFF&apos;</source>
     <message>
         <location filename="../../build/_deps/kdsingleapplication-src/examples/widgetsingleapplication/secondaryinstancewidget.cpp" line="27"/>
         <source>&lt;b&gt;Secondary instance.&lt;/b&gt; Send message to primary:</source>
-        <translation>&lt;b&gt;第二个例子。&lt;/b&gt;发送消息到主服务器：</translation>
+        <translation>&lt;b&gt;次级实例。&lt;/b&gt;发送消息给主实例：</translation>
     </message>
     <message>
         <location filename="../../build/_deps/kdsingleapplication-src/examples/widgetsingleapplication/secondaryinstancewidget.cpp" line="29"/>
@@ -2574,7 +2575,7 @@ You may need to escape the &apos;#&apos; sign as in &apos;\#FFF&apos;</source>
     <message>
         <location filename="../../build/_deps/kdsingleapplication-src/examples/widgetsingleapplication/secondaryinstancewidget.cpp" line="31"/>
         <source>&amp;Send</source>
-        <translation>发送（&amp; S）</translation>
+        <translation>发送(&amp;S)</translation>
     </message>
     <message>
         <location filename="../../build/_deps/kdsingleapplication-src/examples/widgetsingleapplication/secondaryinstancewidget.cpp" line="54"/>
@@ -2584,7 +2585,7 @@ You may need to escape the &apos;#&apos; sign as in &apos;\#FFF&apos;</source>
     <message>
         <location filename="../../build/_deps/kdsingleapplication-src/examples/widgetsingleapplication/secondaryinstancewidget.cpp" line="55"/>
         <source>The message &apos;%1&apos; could not be sent to the primary.</source>
-        <translation>无法将邮件&apos;%1&apos;发送到主服务器。</translation>
+        <translation>无法将消息“%1”发送给主实例。</translation>
     </message>
 </context>
 <context>
@@ -2714,7 +2715,7 @@ You may need to escape the &apos;#&apos; sign as in &apos;\#FFF&apos;</source>
     <message>
         <location filename="../../src/config/shortcutswidget.cpp" line="197"/>
         <source>Move selection left 1px</source>
-        <translation>将选区向左调整 1px</translation>
+        <translation>将选区向左移动 1px</translation>
     </message>
     <message>
         <location filename="../../src/config/shortcutswidget.cpp" line="198"/>
@@ -2749,40 +2750,40 @@ You may need to escape the &apos;#&apos; sign as in &apos;\#FFF&apos;</source>
     <message>
         <location filename="../../src/config/shortcutswidget.cpp" line="268"/>
         <source>It seems, that Windows forces to open its screenshot tool when the &apos;Print Screen&apos; key is pressed. Would you like to disable this so that Flameshot can use the &apos;Print Screen&apos; key?</source>
-        <translation type="unfinished"></translation>
+        <translation>检测到 Windows 会在按下「Print Screen」键时强制启动自带截图工具。是否禁用该设置，让 Flameshot 使用此键？</translation>
     </message>
     <message>
         <location filename="../../src/config/shortcutswidget.cpp" line="273"/>
         <source>Flameshot must be restarted for changes to take effect.</source>
-        <translation type="unfinished">火焰截图必须重新启动以使修改生效。</translation>
+        <translation>Flameshot必须重新启动以使修改生效。</translation>
     </message>
     <message>
         <location filename="../../src/config/shortcutswidget.cpp" line="278"/>
         <source>No, don&apos;t ask again</source>
-        <translation type="unfinished"></translation>
+        <translation>不再询问</translation>
     </message>
     <message>
         <location filename="../../src/config/shortcutswidget.cpp" line="286"/>
         <location filename="../../src/config/shortcutswidget.cpp" line="333"/>
         <location filename="../../src/config/shortcutswidget.cpp" line="343"/>
         <source>The registry could not be changed!</source>
-        <translation type="unfinished"></translation>
+        <translation>注册表修改失败！</translation>
     </message>
     <message>
         <location filename="../../src/config/shortcutswidget.cpp" line="317"/>
         <source>Register Flameshot as MS-SCREENCLIP application (administrator privileges required)</source>
-        <translation type="unfinished"></translation>
+        <translation>将 Flameshot 注册为 MS-SCREENCLIP 应用（需要管理员权限）</translation>
     </message>
     <message>
         <location filename="../../src/config/shortcutswidget.cpp" line="321"/>
         <source>After registering, you can select Flameshot as the default screenshot application in Windows Settings.</source>
-        <translation type="unfinished"></translation>
+        <translation>注册后，你可以在 Windows 设置中选择 Flameshot 作为默认截图应用。</translation>
     </message>
     <message>
         <location filename="../../src/config/shortcutswidget.cpp" line="334"/>
         <location filename="../../src/config/shortcutswidget.cpp" line="344"/>
         <source>You may start Flameshot as administrator ONCE and try again!</source>
-        <translation type="unfinished"></translation>
+        <translation>请以管理员身份启动 Flameshot 一次，然后重试！</translation>
     </message>
     <message>
         <source>Delete current tool</source>
@@ -2972,7 +2973,7 @@ You may need to escape the &apos;#&apos; sign as in &apos;\#FFF&apos;</source>
     <message>
         <location filename="../../src/utils/systemnotification.cpp" line="43"/>
         <source>No DBus System Notification service found</source>
-        <translation type="unfinished"></translation>
+        <translation>未找到 DBus 系统通知服务</translation>
     </message>
     <message>
         <location filename="../../src/utils/systemnotification.cpp" line="51"/>
@@ -3010,7 +3011,7 @@ You may need to escape the &apos;#&apos; sign as in &apos;\#FFF&apos;</source>
     <message>
         <location filename="../../src/tools/text/textconfig.cpp" line="91"/>
         <source>Center Align</source>
-        <translation>中心对齐</translation>
+        <translation>居中对齐</translation>
     </message>
     <message>
         <location filename="../../src/tools/text/textconfig.cpp" line="100"/>
@@ -3062,17 +3063,17 @@ You may need to escape the &apos;#&apos; sign as in &apos;\#FFF&apos;</source>
     <message>
         <location filename="../../src/widgets/trayicon.cpp" line="162"/>
         <source>Download version %1</source>
-        <translation type="unfinished"></translation>
+        <translation>下载版本 %1</translation>
     </message>
     <message>
         <location filename="../../src/widgets/trayicon.cpp" line="250"/>
         <source>Select Screen</source>
-        <translation type="unfinished"></translation>
+        <translation>选择屏幕</translation>
     </message>
     <message>
         <location filename="../../src/widgets/trayicon.cpp" line="266"/>
         <source>Monitor %1: %2 (%3x%4)</source>
-        <translation type="unfinished"></translation>
+        <translation>显示器 %1：%2（%3x%4）</translation>
     </message>
     <message>
         <source>New version %1 is available</source>
@@ -3136,12 +3137,12 @@ You may need to escape the &apos;#&apos; sign as in &apos;\#FFF&apos;</source>
     <message>
         <location filename="../../src/tools/undo/undotool.cpp" line="24"/>
         <source>Undo</source>
-        <translation>撤消</translation>
+        <translation>撤销</translation>
     </message>
     <message>
         <location filename="../../src/tools/undo/undotool.cpp" line="34"/>
         <source>Undo the last modification</source>
-        <translation>撤消上次修改</translation>
+        <translation>撤销上次修改</translation>
     </message>
 </context>
 <context>
@@ -3256,17 +3257,17 @@ You may need to escape the &apos;#&apos; sign as in &apos;\#FFF&apos;</source>
     <message>
         <location filename="../../src/config/visualseditor.cpp" line="101"/>
         <source>UI language</source>
-        <translation type="unfinished"></translation>
+        <translation>界面语言</translation>
     </message>
     <message>
         <location filename="../../src/config/visualseditor.cpp" line="141"/>
         <source>Configuration</source>
-        <translation type="unfinished">配置</translation>
+        <translation>设置</translation>
     </message>
     <message>
         <location filename="../../src/config/visualseditor.cpp" line="142"/>
         <source>Flameshot must be restarted to apply these changes!</source>
-        <translation type="unfinished"></translation>
+        <translation>必须重启Flameshot后才能应用这些改动！</translation>
     </message>
 </context>
 <context>

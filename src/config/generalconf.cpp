@@ -62,6 +62,8 @@ GeneralConf::GeneralConf(QWidget* parent)
 #endif
 #if defined(Q_OS_MACOS)
     initUseNativeFullscreen();
+#endif
+#if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
     initSmartRegionDetection();
 #endif
 #if defined(Q_OS_UNIX) && !defined(Q_OS_MACOS)
@@ -83,6 +85,7 @@ GeneralConf::GeneralConf(QWidget* parent)
     initSquareMagnifier();
     initJpegQuality();
     initReverseArrow();
+    initDrawCircleCounterOutline();
     // this has to be at the end
     initConfigButtons();
     updateComponents();
@@ -117,6 +120,7 @@ void GeneralConf::_updateComponents(bool allowEmptySavePath)
     m_squareMagnifier->setChecked(config.squareMagnifier());
     m_saveLastRegion->setChecked(config.saveLastRegion());
     m_reverseArrow->setChecked(config.reverseArrow());
+    m_drawCircleCounterOutline->setChecked(config.drawCircleCounterOutline());
     m_autoCloseIdleDaemon->setChecked(config.autoCloseIdleDaemon());
     m_predefinedColorPaletteLarge->setChecked(
       config.predefinedColorPaletteLarge());
@@ -136,7 +140,11 @@ void GeneralConf::_updateComponents(bool allowEmptySavePath)
 #endif
 #if defined(Q_OS_MACOS)
     m_useNativeFullscreen->setChecked(config.useNativeFullscreen());
+#endif
+#if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
     m_smartRegionDetection->setChecked(config.smartRegionDetection());
+#endif
+#if defined(Q_OS_MACOS)
     m_smartRegionAccessibilityButton->setEnabled(config.smartRegionDetection());
 #endif
 #if defined(Q_OS_UNIX) && !defined(Q_OS_MACOS)
@@ -871,6 +879,20 @@ void GeneralConf::initReverseArrow()
       m_reverseArrow, &QCheckBox::clicked, this, &GeneralConf::setReverseArrow);
 }
 
+void GeneralConf::initDrawCircleCounterOutline()
+{
+    m_drawCircleCounterOutline =
+      new QCheckBox(tr("Draw outline around circle counter"), this);
+    m_drawCircleCounterOutline->setToolTip(
+      tr("Draw a contrasting ring around the counter bubble so it stays "
+         "visible on any background"));
+    m_scrollAreaLayout->addWidget(m_drawCircleCounterOutline);
+
+    connect(m_drawCircleCounterOutline, &QCheckBox::clicked, [](bool checked) {
+        ConfigHandler().setDrawCircleCounterOutline(checked);
+    });
+}
+
 void GeneralConf::initInsecurePixelate()
 {
     m_insecurePixelate = new QCheckBox(tr("Insecure Pixelate"), this);
@@ -971,22 +993,29 @@ void GeneralConf::useNativeFullscreenChanged(bool checked)
 {
     ConfigHandler().setUseNativeFullscreen(checked);
 }
+#endif
 
+#if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
 void GeneralConf::initSmartRegionDetection()
 {
     m_smartRegionDetection =
       new QCheckBox(tr("Enable smart region selection"), this);
-    m_smartRegionDetection->setToolTip(
+    QString tooltip =
       tr("Hover over a window or interface element, use the mouse wheel to "
          "scroll up toward its parent or down toward its child, and click to "
-         "select it. Dragging still creates a custom rectangle. UI element "
-         "detection requires macOS Accessibility permission."));
+         "select it. Dragging still creates a custom rectangle.");
+#if defined(Q_OS_MACOS)
+    tooltip +=
+      tr(" UI element detection requires macOS Accessibility permission.");
+#endif
+    m_smartRegionDetection->setToolTip(tooltip);
     m_scrollAreaLayout->addWidget(m_smartRegionDetection);
     connect(m_smartRegionDetection,
             &QCheckBox::clicked,
             this,
             &GeneralConf::smartRegionDetectionChanged);
 
+#if defined(Q_OS_MACOS)
     m_smartRegionAccessibilityButton =
       new QPushButton(tr("Grant Accessibility Access..."), this);
     m_smartRegionAccessibilityButton->setToolTip(
@@ -997,14 +1026,19 @@ void GeneralConf::initSmartRegionDetection()
             &QPushButton::clicked,
             this,
             &GeneralConf::requestSmartRegionAccessibility);
+#endif
 }
 
 void GeneralConf::smartRegionDetectionChanged(bool checked)
 {
     ConfigHandler().setSmartRegionDetection(checked);
+#if defined(Q_OS_MACOS)
     m_smartRegionAccessibilityButton->setEnabled(checked);
+#endif
 }
+#endif
 
+#if defined(Q_OS_MACOS)
 void GeneralConf::requestSmartRegionAccessibility()
 {
     auto detector = SmartRegionDetector::create();

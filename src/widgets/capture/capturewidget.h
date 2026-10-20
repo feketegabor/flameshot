@@ -32,6 +32,7 @@ class QLabel;
 class QPaintEvent;
 class QResizeEvent;
 class QMouseEvent;
+class QScreen;
 class QShortcut;
 class QNetworkAccessManager;
 class QNetworkReply;
@@ -85,7 +86,6 @@ private slots:
     void handleButtonRightClick(CaptureToolButton* b);
     void setDrawColor(const QColor& c);
     void onToolSizeChanged(int size);
-    void onToolSizeSettled(int size);
     void updateActiveLayer(int layer);
     void onMoveCaptureToolUp(int captureToolIndex);
     void onMoveCaptureToolDown(int captureToolIndex);
@@ -175,6 +175,7 @@ private:
 
     // Context information
     CaptureContext m_context;
+    QScreen* m_selectedScreen = nullptr;
 
     // Main ui color
     QColor m_uiColor;
@@ -203,6 +204,7 @@ private:
     std::unique_ptr<SmartRegionDetector> m_smartRegionDetector;
     QList<SmartRegionCandidate> m_smartRegionCandidates;
     int m_smartRegionIndex{ -1 };
+    QRect m_preferredSmartRegionGeometry;
     QPoint m_pendingSmartRegionPosition;
     QTimer m_smartRegionUpdateTimer;
     QElapsedTimer m_smartRegionUpdateElapsed;

@@ -23,6 +23,7 @@
 #include "widgets/capture/modificationcommand.h"
 #include "widgets/capture/notifierbox.h"
 #include "widgets/capture/overlaymessage.h"
+#include "widgets/capture/smartregioninteraction.h"
 #include "widgets/draggablewidgetmaker.h"
 #include "widgets/orientablepushbutton.h"
 #include "widgets/panel/sidepanelwidget.h"
@@ -49,34 +50,6 @@
 #define MOUSE_DISTANCE_TO_START_MOVING 3
 
 auto const MOUSE_WHEEL_TRESHOLD = 60;
-
-namespace {
-constexpr bool smartRegionOwnsWheel(bool selectionVisible,
-                                    bool smartRegionEnabled)
-{
-    return !selectionVisible && smartRegionEnabled;
-}
-
-static_assert(smartRegionOwnsWheel(false, true));
-static_assert(!smartRegionOwnsWheel(true, true));
-static_assert(!smartRegionOwnsWheel(false, false));
-static_assert(!smartRegionOwnsWheel(true, false));
-
-constexpr int smartRegionNavigationDirection(int delta, bool inverted)
-{
-    // Candidate indices run from the deepest element toward its parents.
-    // Normalize Qt's delta so the physical gesture has the same meaning with
-    // both traditional and macOS natural scrolling.
-    const int physicalDelta = inverted ? -delta : delta;
-    return physicalDelta > 0 ? 1 : physicalDelta < 0 ? -1 : 0;
-}
-
-static_assert(smartRegionNavigationDirection(-1, true) == 1);
-static_assert(smartRegionNavigationDirection(1, true) == -1);
-static_assert(smartRegionNavigationDirection(1, false) == 1);
-static_assert(smartRegionNavigationDirection(-1, false) == -1);
-static_assert(smartRegionNavigationDirection(0, false) == 0);
-}
 
 // CaptureWidget is the main component used to capture the screen. It contains
 // an area of selection with its respective buttons.
@@ -231,6 +204,7 @@ CaptureWidget::CaptureWidget(const CaptureRequest& req,
         if (selectedScreen != nullptr && windowHandle()) {
             windowHandle()->setScreen(selectedScreen);
         }
+        m_selectedScreen = selectedScreen;
 #endif
     }
 
@@ -245,7 +219,16 @@ CaptureWidget::CaptureWidget(const CaptureRequest& req,
             screenForAreas = QGuiApplication::primaryScreen();
         }
         QRect r = screenForAreas ? screenForAreas->geometry() : QRect();
+#if defined(Q_OS_MACOS)
+        // The overlay captures the entire display, but its controls must stay
+        // clear of the Dock and menu bar, including on offset displays.
+        if (screenForAreas) {
+            r = screenForAreas->availableGeometry();
+            r.translate(-geometry().topLeft());
+        }
+#else
         r.moveTo(0, 0);
+#endif
         areas.append(r);
     } else {
         areas.append(rect());
@@ -257,7 +240,7 @@ CaptureWidget::CaptureWidget(const CaptureRequest& req,
 
     initButtons();
     initSelection(); // button handler must be initialized before
-#if defined(Q_OS_MACOS)
+#if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
     initSmartRegionDetection();
 #endif
     initShortcuts(); // must be called after initSelection
@@ -297,7 +280,6 @@ CaptureWidget::CaptureWidget(const CaptureRequest& req,
         updateCursor();
         m_toolSizeByKeyboard = 0;
         onToolSizeChanged(m_context.toolSize);
-        onToolSizeSettled(m_context.toolSize);
     });
 
     m_config.checkAndHandleError();
@@ -505,17 +487,19 @@ void CaptureWidget::showxywh()
 void CaptureWidget::initHelpMessage()
 {
     QList<QPair<QString, QString>> keyMap;
-#if defined(Q_OS_MACOS)
+#if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
     if (m_smartRegionDetector) {
         keyMap << std::pair(
           tr("Mouse"), tr("Click a detected region or drag a custom area"));
-        keyMap << std::pair(
-          tr("Mouse Wheel"), tr("Scroll up for parent, down for child"));
+        keyMap << std::pair(tr("Mouse Wheel"),
+                            tr("Scroll up for parent, down for child"));
+#if defined(Q_OS_MACOS)
         if (!m_smartRegionDetector->accessibilityAvailable()) {
             keyMap << std::pair(
               tr("Accessibility"),
               tr("Enable in General settings to detect UI elements"));
         }
+#endif
     } else {
         keyMap << std::pair(tr("Mouse"), tr("Select screenshot area"));
     }
@@ -536,7 +520,9 @@ void CaptureWidget::initHelpMessage()
         }
     }
     keyMap << std::pair(tr("Mouse Wheel"),
-                        tr("Change tool size after selection"));
+                        m_smartRegionDetector
+                          ? tr("Change tool size after selection")
+                          : tr("Change tool size"));
     keyMap << std::pair(tr("Right Click"), tr("Show color picker"));
     keyMap << std::pair(ConfigHandler().shortcut("TYPE_TOGGLE_PANEL"),
                         tr("Open side panel"));
@@ -676,10 +662,10 @@ void CaptureWidget::uncheckActiveTool()
 void CaptureWidget::closeEvent(QCloseEvent* event)
 {
 #if !(defined(Q_OS_MACOS) || defined(Q_OS_WIN))
-    /* Wayland copy problem workaround: the copy
+    /* GNOME copy problem workaround, copy
        operation seems to work only when there
        is a visible window to retrieve the
-       data from. On GNOME and COSMIC, the GUI should
+       data from. On GNOME, the GUI should
        handle the copy operation, not the
        daemon.
     */
@@ -688,18 +674,17 @@ void CaptureWidget::closeEvent(QCloseEvent* event)
 
     if (m_captureDone && copyRequested) {
         DesktopInfo desktopInfo;
-        const bool needClipboardWorkaround =
+        const bool needGnomeWorkaround =
           desktopInfo.waylandDetected() &&
-          (desktopInfo.windowManager() == DesktopInfo::GNOME ||
-           desktopInfo.windowManager() == DesktopInfo::COSMIC);
+          desktopInfo.windowManager() == DesktopInfo::GNOME;
 
-        if (needClipboardWorkaround && !m_clipboardWorkaroundDone) {
+        if (needGnomeWorkaround && !m_clipboardWorkaroundDone) {
             event->ignore();
             m_clipboardWorkaroundDone = true;
             m_context.request.removeTask(CaptureRequest::COPY);
             AbstractLogger::info()
-              << "GNOME/COSMIC Wayland detected; keeping capture window "
-                 "alive until clipboard data is fetched.";
+              << "GNOME Wayland detected; keeping capture window alive until "
+                 "clipboard data is fetched.";
             saveToClipboardGnomeWorkaround(pixmap(), this);
             return;
         }
@@ -1199,12 +1184,16 @@ void CaptureWidget::wheelEvent(QWheelEvent* e)
      * */
     // Smart-region mode owns the complete preselection scroll gesture. Do not
     // fall through to tool sizing while candidate detection is still pending.
-    if (smartRegionOwnsWheel(m_selection->isVisible(),
-                             m_smartRegionDetector != nullptr)) {
-        int smartRegionDelta = e->pixelDelta().y();
-        if (smartRegionDelta == 0) {
-            smartRegionDelta = e->angleDelta().y();
-        }
+    int smartRegionDelta = e->pixelDelta().y();
+    if (smartRegionDelta == 0) {
+        smartRegionDelta = e->angleDelta().y();
+    }
+    const auto smartRegionWheel =
+      SmartRegionInteraction::wheelDecision(m_selection->isVisible(),
+                                            m_smartRegionDetector != nullptr,
+                                            smartRegionDelta,
+                                            e->inverted());
+    if (smartRegionWheel.consumed) {
 
         if (smartRegionDelta != 0) {
             if (!currentSmartRegionCandidate()) {
@@ -1216,10 +1205,9 @@ void CaptureWidget::wheelEvent(QWheelEvent* e)
               qAbs(e->angleDelta().y()) >= MOUSE_WHEEL_TRESHOLD;
             if (discreteWheel || (current - m_lastSmartRegionWheel) > 180) {
                 m_lastSmartRegionWheel = current;
-                const int direction = smartRegionNavigationDirection(
-                  smartRegionDelta, e->inverted());
-                if (direction != 0 && currentSmartRegionCandidate()) {
-                    navigateSmartRegion(direction);
+                if (smartRegionWheel.direction != 0 &&
+                    currentSmartRegionCandidate()) {
+                    navigateSmartRegion(smartRegionWheel.direction);
                 }
             }
         }
@@ -1274,6 +1262,13 @@ void CaptureWidget::moveEvent(QMoveEvent* e)
 {
     QWidget::moveEvent(e);
     m_context.widgetOffset = mapToGlobal(QPoint(0, 0));
+#if defined(Q_OS_UNIX) && !defined(Q_OS_MACOS)
+    // If a compositor moved the window to the wrong screen, move it back
+    if (m_context.fullscreen && m_selectedScreen &&
+        geometry().topLeft() != m_selectedScreen->geometry().topLeft()) {
+        move(m_selectedScreen->geometry().topLeft());
+    }
+#endif
 }
 
 void CaptureWidget::changeEvent(QEvent* e)
@@ -1485,7 +1480,7 @@ void CaptureWidget::initSelection()
 
 void CaptureWidget::initSmartRegionDetection()
 {
-#if defined(Q_OS_MACOS)
+#if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
     if (!m_config.smartRegionDetection()) {
         return;
     }
@@ -1532,38 +1527,27 @@ void CaptureWidget::updateSmartRegionCandidate()
         return;
     }
 
-    const QRect previousLeaf =
-      m_smartRegionCandidates.isEmpty()
-        ? QRect()
-        : m_smartRegionCandidates.constFirst().geometry;
-    const SmartRegionCandidate* previous = currentSmartRegionCandidate();
-    const QRect previousSelection = previous ? previous->geometry : QRect();
     const QRect oldGeometry = currentSmartRegionGeometry();
 
     QList<SmartRegionCandidate> candidates =
       m_smartRegionDetector->candidatesAt(
         mapToGlobal(m_pendingSmartRegionPosition));
-    int nextIndex = candidates.isEmpty() ? -1 : 0;
-    if (!candidates.isEmpty() &&
-        candidates.constFirst().geometry == previousLeaf &&
-        previousSelection.isValid()) {
-        for (int index = 0; index < candidates.size(); ++index) {
-            if (candidates.at(index).geometry == previousSelection) {
-                nextIndex = index;
-                break;
-            }
-        }
+    const int nextIndex = SmartRegionInteraction::preferredCandidateIndex(
+      candidates, m_preferredSmartRegionGeometry);
+    if (nextIndex < 0 ||
+        candidates.at(nextIndex).geometry != m_preferredSmartRegionGeometry) {
+        m_preferredSmartRegionGeometry = {};
     }
 
     m_smartRegionCandidates = std::move(candidates);
     m_smartRegionIndex = nextIndex;
     const QRect newGeometry = currentSmartRegionGeometry();
-    m_selection->setClickSelectionCandidate(newGeometry);
     update(paddedUpdateRect(oldGeometry).united(paddedUpdateRect(newGeometry)));
 }
 
 void CaptureWidget::clearSmartRegionCandidate()
 {
+    m_preferredSmartRegionGeometry = {};
     if (m_smartRegionCandidates.isEmpty() && m_smartRegionIndex < 0) {
         if (m_selection) {
             m_selection->setClickSelectionCandidate({});
@@ -1594,8 +1578,10 @@ bool CaptureWidget::navigateSmartRegion(int direction)
 
     const QRect oldGeometry = currentSmartRegionGeometry();
     m_smartRegionIndex = nextIndex;
+    // A wheel choice survives movement between children of this region.
+    m_preferredSmartRegionGeometry =
+      m_smartRegionCandidates.at(nextIndex).geometry;
     const QRect newGeometry = currentSmartRegionGeometry();
-    m_selection->setClickSelectionCandidate(newGeometry);
     update(paddedUpdateRect(oldGeometry).united(paddedUpdateRect(newGeometry)));
     return true;
 }
@@ -1752,6 +1738,14 @@ void CaptureWidget::onToolSizeChanged(int t)
 {
 
     m_context.toolSize = t;
+
+    // Persist the new size straight away. This was previously deferred until
+    // the NotifierBox finished hiding, which meant a size set from the side
+    // panel was never saved at all, since that path never shows the notifier,
+    // and a size set with the wheel or the keyboard was lost whenever the
+    // capture was completed before the notifier's timeout had elapsed.
+    m_config.setToolSize(activeButtonToolType(), t);
+
     CaptureTool* tool = activeButtonTool();
     if (tool && tool->showMousePreview()) {
         setCursor(Qt::BlankCursor);
@@ -1778,11 +1772,6 @@ void CaptureWidget::onToolSizeChanged(int t)
 
     // Force a repaint to prevent artifacting
     this->repaint();
-}
-
-void CaptureWidget::onToolSizeSettled(int size)
-{
-    m_config.setToolSize(activeButtonToolType(), size);
 }
 
 void CaptureWidget::setDrawColor(const QColor& c)
@@ -2316,6 +2305,7 @@ void CaptureWidget::drawErrorMessage(const QString& msg, QPainter* painter)
 
 void CaptureWidget::drawInactiveRegion(QPainter* painter)
 {
+    painter->save();
     QColor overlayColor(0, 0, 0, m_opacity);
     painter->setBrush(overlayColor);
     QRect r;
@@ -2329,16 +2319,19 @@ void CaptureWidget::drawInactiveRegion(QPainter* painter)
 
     painter->setClipRegion(grey);
     painter->drawRect(-1, -1, rect().width() + 1, rect().height() + 1);
+    painter->restore();
 }
 
 void CaptureWidget::drawSmartRegionCandidate(QPainter* painter)
 {
-    const SmartRegionCandidate* candidate = currentSmartRegionCandidate();
     const QRect geometry = currentSmartRegionGeometry();
-    if (!candidate || !geometry.isValid() || m_selection->isVisible()) {
+    if (!geometry.isValid() || m_selection->isVisible()) {
         return;
     }
 
+    // Click the preview actually presented, rather than a newer candidate
+    // awaiting its queued repaint.
+    m_selection->setClickSelectionCandidate(geometry);
     painter->save();
     QColor outline = m_uiColor;
     outline.setAlpha(245);

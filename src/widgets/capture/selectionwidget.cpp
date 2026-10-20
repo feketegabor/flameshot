@@ -4,6 +4,7 @@
 #include "selectionwidget.h"
 #include "utils/globalvalues.h"
 #include "widgets/capture/capturetoolbutton.h"
+#include "widgets/capture/smartregioninteraction.h"
 
 #include <QApplication>
 #include <QEvent>
@@ -14,10 +15,6 @@
 #include <utility>
 
 #define MARGIN (m_THandle.width())
-
-namespace {
-constexpr int CLICK_SELECTION_DRAG_THRESHOLD = 3;
-}
 
 SelectionWidget::SelectionWidget(QColor c, QWidget* parent)
   : QWidget(parent)
@@ -238,8 +235,8 @@ void SelectionWidget::parentMouseMoveEvent(QMouseEvent* e)
     }
 
     if (m_clickSelectionPending) {
-        if ((e->pos() - m_dragStartPos).manhattanLength() <=
-            CLICK_SELECTION_DRAG_THRESHOLD) {
+        if (!SmartRegionInteraction::startsManualDrag(m_dragStartPos,
+                                                      e->pos())) {
             return;
         }
 

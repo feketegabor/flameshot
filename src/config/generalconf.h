@@ -66,7 +66,11 @@ private slots:
 #endif
 #if defined(Q_OS_MACOS)
     void useNativeFullscreenChanged(bool checked);
+#endif
+#if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
     void smartRegionDetectionChanged(bool checked);
+#endif
+#if defined(Q_OS_MACOS)
     void requestSmartRegionAccessibility();
 #endif
 #if defined(Q_OS_UNIX) && !defined(Q_OS_MACOS)
@@ -109,12 +113,15 @@ private:
     void initShowSelectionGeometry();
     void initJpegQuality();
     void initReverseArrow();
+    void initDrawCircleCounterOutline();
     void initInsecurePixelate();
 #if !defined(Q_OS_MACOS)
     void initCaptureActiveMonitor();
 #endif
 #if defined(Q_OS_MACOS)
     void initUseNativeFullscreen();
+#endif
+#if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
     void initSmartRegionDetection();
 #endif
 #if defined(Q_OS_UNIX) && !defined(Q_OS_MACOS)
@@ -167,13 +174,18 @@ private:
     QSpinBox* m_xywhTimeout;
     QSpinBox* m_jpegQuality;
     QCheckBox* m_reverseArrow;
+    QCheckBox* m_drawCircleCounterOutline;
     QCheckBox* m_insecurePixelate;
 #if !defined(Q_OS_MACOS)
     QCheckBox* m_captureActiveMonitor;
 #endif
 #if defined(Q_OS_MACOS)
     QCheckBox* m_useNativeFullscreen;
+#endif
+#if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
     QCheckBox* m_smartRegionDetection;
+#endif
+#if defined(Q_OS_MACOS)
     QPushButton* m_smartRegionAccessibilityButton;
 #endif
 #if defined(Q_OS_UNIX) && !defined(Q_OS_MACOS)

@@ -7,9 +7,7 @@
 #include <CoreGraphics/CoreGraphics.h>
 
 #include <QCoreApplication>
-#include <QMap>
-#include <QSet>
-#include <QStringList>
+#include <QElapsedTimer>
 
 #include <algorithm>
 #include <cmath>
@@ -61,6 +59,64 @@ private:
     T m_value;
 };
 
+class AXLookupBudget
+{
+public:
+    AXLookupBudget() { m_elapsed.start(); }
+
+    bool prepare(AXUIElementRef element)
+    {
+        const qint64 remainingMs = LOOKUP_BUDGET_MS - m_elapsed.elapsed();
+        if (m_failed || remainingMs <= 0) {
+            return false;
+        }
+
+        // AX timeouts belong to individual objects, including newly returned
+        // children and parents. Also limit each call to the remaining budget.
+        const float timeout =
+          static_cast<float>(std::min(remainingMs, MESSAGE_TIMEOUT_MS)) /
+          1000.F;
+        if (AXUIElementSetMessagingTimeout(element, timeout) !=
+            kAXErrorSuccess) {
+            m_failed = true;
+            return false;
+        }
+        return true;
+    }
+
+    void recordResult(AXError result)
+    {
+        m_failed |= result == kAXErrorCannotComplete ||
+                    result == kAXErrorInvalidUIElement;
+    }
+
+    bool exhausted() const
+    {
+        return m_failed || m_elapsed.elapsed() >= LOOKUP_BUDGET_MS;
+    }
+
+private:
+    // These are best-effort messaging limits, not a hard real-time guarantee.
+    static constexpr qint64 LOOKUP_BUDGET_MS = 200;
+    static constexpr qint64 MESSAGE_TIMEOUT_MS = 80;
+    QElapsedTimer m_elapsed;
+    bool m_failed{ false };
+};
+
+AXError copyAXAttribute(AXUIElementRef element,
+                        CFStringRef attribute,
+                        CFTypeRef* value,
+                        AXLookupBudget& budget)
+{
+    if (!budget.prepare(element)) {
+        return kAXErrorCannotComplete;
+    }
+    const AXError result =
+      AXUIElementCopyAttributeValue(element, attribute, value);
+    budget.recordResult(result);
+    return result;
+}
+
 bool numberValue(CFDictionaryRef dictionary, CFStringRef key, int* value)
 {
     const auto* number =
@@ -106,11 +162,6 @@ QString stringValue(CFTypeRef value)
     return result;
 }
 
-QString dictionaryString(CFDictionaryRef dictionary, CFStringRef key)
-{
-    return stringValue(CFDictionaryGetValue(dictionary, key));
-}
-
 QRect qtRect(const CGRect& rect)
 {
     const int left = static_cast<int>(std::floor(CGRectGetMinX(rect)));
@@ -120,20 +171,26 @@ QRect qtRect(const CGRect& rect)
     return { left, top, right - left, bottom - top };
 }
 
-bool copyAXFrame(AXUIElementRef element, QRect* geometry)
+bool copyAXFrame(AXUIElementRef element,
+                 QRect* geometry,
+                 AXLookupBudget& budget)
 {
     CFTypeRef positionValue = nullptr;
-    CFTypeRef sizeValue = nullptr;
-    const AXError positionError = AXUIElementCopyAttributeValue(
-      element, kAXPositionAttribute, &positionValue);
-    const AXError sizeError =
-      AXUIElementCopyAttributeValue(element, kAXSizeAttribute, &sizeValue);
+    const AXError positionError =
+      copyAXAttribute(element, kAXPositionAttribute, &positionValue, budget);
     CFRef<CFTypeRef> position(positionValue);
-    CFRef<CFTypeRef> size(sizeValue);
+    if (positionError != kAXErrorSuccess || !position.get() ||
+        CFGetTypeID(position.get()) != AXValueGetTypeID()) {
+        return false;
+    }
 
-    if (positionError != kAXErrorSuccess || sizeError != kAXErrorSuccess ||
-        !position.get() || !size.get() ||
-        CFGetTypeID(position.get()) != AXValueGetTypeID() ||
+    // Preparing the size request checks the budget again after the position
+    // request; a slow first IPC must not start a second one after expiry.
+    CFTypeRef sizeValue = nullptr;
+    const AXError sizeError =
+      copyAXAttribute(element, kAXSizeAttribute, &sizeValue, budget);
+    CFRef<CFTypeRef> size(sizeValue);
+    if (sizeError != kAXErrorSuccess || !size.get() ||
         CFGetTypeID(size.get()) != AXValueGetTypeID()) {
         return false;
     }
@@ -154,78 +211,17 @@ bool copyAXFrame(AXUIElementRef element, QRect* geometry)
     return true;
 }
 
-QString copyAXString(AXUIElementRef element, CFStringRef attribute)
+QString copyAXString(AXUIElementRef element,
+                     CFStringRef attribute,
+                     AXLookupBudget& budget)
 {
     CFTypeRef value = nullptr;
-    if (AXUIElementCopyAttributeValue(element, attribute, &value) !=
-        kAXErrorSuccess) {
+    const AXError result = copyAXAttribute(element, attribute, &value, budget);
+    CFRef<CFTypeRef> holder(value);
+    if (result != kAXErrorSuccess) {
         return {};
     }
-    CFRef<CFTypeRef> holder(value);
     return stringValue(holder.get());
-}
-
-QString readableRole(const QString& role)
-{
-    static const QMap<QString, QString> roles = {
-        { QStringLiteral("AXButton"), QStringLiteral("Button") },
-        { QStringLiteral("AXCheckBox"), QStringLiteral("Checkbox") },
-        { QStringLiteral("AXComboBox"), QStringLiteral("Combo box") },
-        { QStringLiteral("AXGroup"), QStringLiteral("Group") },
-        { QStringLiteral("AXImage"), QStringLiteral("Image") },
-        { QStringLiteral("AXLink"), QStringLiteral("Link") },
-        { QStringLiteral("AXList"), QStringLiteral("List") },
-        { QStringLiteral("AXMenu"), QStringLiteral("Menu") },
-        { QStringLiteral("AXMenuItem"), QStringLiteral("Menu item") },
-        { QStringLiteral("AXOutline"), QStringLiteral("Outline") },
-        { QStringLiteral("AXPopUpButton"), QStringLiteral("Pop-up button") },
-        { QStringLiteral("AXRadioButton"), QStringLiteral("Radio button") },
-        { QStringLiteral("AXScrollArea"), QStringLiteral("Scroll area") },
-        { QStringLiteral("AXSheet"), QStringLiteral("Sheet") },
-        { QStringLiteral("AXSlider"), QStringLiteral("Slider") },
-        { QStringLiteral("AXStaticText"), QStringLiteral("Text") },
-        { QStringLiteral("AXTabGroup"), QStringLiteral("Tab group") },
-        { QStringLiteral("AXTable"), QStringLiteral("Table") },
-        { QStringLiteral("AXTextArea"), QStringLiteral("Text area") },
-        { QStringLiteral("AXTextField"), QStringLiteral("Text field") },
-        { QStringLiteral("AXToolbar"), QStringLiteral("Toolbar") },
-        { QStringLiteral("AXWebArea"), QStringLiteral("Web content") },
-        { QStringLiteral("AXWindow"), QStringLiteral("Window") },
-    };
-    if (roles.contains(role)) {
-        return roles.value(role);
-    }
-    return role.startsWith(QStringLiteral("AX")) ? role.mid(2) : role;
-}
-
-QString candidateDescription(AXUIElementRef element, const QString& role)
-{
-    QString title = copyAXString(element, kAXTitleAttribute).trimmed();
-    if (title.isEmpty()) {
-        title = copyAXString(element, kAXDescriptionAttribute).trimmed();
-    }
-    if (title.length() > 80) {
-        title = title.left(77) + QStringLiteral("...");
-    }
-
-    const QString readable = readableRole(role);
-    return title.isEmpty() ? readable
-                           : QStringLiteral("%1: %2").arg(readable, title);
-}
-
-QString geometryKey(const QRect& geometry)
-{
-    return QStringLiteral("%1,%2,%3,%4")
-      .arg(geometry.x())
-      .arg(geometry.y())
-      .arg(geometry.width())
-      .arg(geometry.height());
-}
-
-bool isUsefulGeometry(const QRect& geometry, const QPoint& position)
-{
-    return geometry.width() >= 4 && geometry.height() >= 4 &&
-           geometry.contains(position);
 }
 
 bool accessibilityTrusted(bool prompt)
@@ -253,8 +249,6 @@ struct MacOsSmartRegionDetector::Impl
     {
         QRect geometry;
         pid_t ownerPid{ 0 };
-        QString ownerName;
-        QString windowName;
     };
 
     QList<Window> windows;
@@ -331,10 +325,6 @@ void MacOsSmartRegionDetector::refresh()
         Impl::Window window;
         window.geometry = geometry;
         window.ownerPid = static_cast<pid_t>(ownerPid);
-        window.ownerName =
-          dictionaryString(dictionary, kCGWindowOwnerName).trimmed();
-        window.windowName =
-          dictionaryString(dictionary, kCGWindowName).trimmed();
         m_impl->windows.append(std::move(window));
     }
 }
@@ -342,54 +332,51 @@ void MacOsSmartRegionDetector::refresh()
 QList<SmartRegionCandidate> MacOsSmartRegionDetector::candidatesAt(
   const QPoint& globalPosition)
 {
-    QList<SmartRegionCandidate> candidates;
     const Impl::Window* window = m_impl->windowAt(globalPosition);
     if (!window) {
-        return candidates;
+        return {};
     }
 
-    QSet<QString> seenGeometries;
+    QList<QRect> elementGeometries;
     if (m_impl->trusted) {
+        AXLookupBudget budget;
         CFRef<AXUIElementRef> application(
           AXUIElementCreateApplication(window->ownerPid));
-        if (application.get()) {
-            AXUIElementSetMessagingTimeout(application.get(), 0.08F);
+        if (application.get() && budget.prepare(application.get())) {
             AXUIElementRef hitElement = nullptr;
-            if (AXUIElementCopyElementAtPosition(
-                  application.get(),
-                  static_cast<float>(globalPosition.x()),
-                  static_cast<float>(globalPosition.y()),
-                  &hitElement) == kAXErrorSuccess &&
-                hitElement) {
-                CFRef<AXUIElementRef> current(hitElement);
-                for (int depth = 0; current.get() && depth < 32; ++depth) {
+            const AXError hitResult = AXUIElementCopyElementAtPosition(
+              application.get(),
+              static_cast<float>(globalPosition.x()),
+              static_cast<float>(globalPosition.y()),
+              &hitElement);
+            budget.recordResult(hitResult);
+            CFRef<AXUIElementRef> current(hitElement);
+            if (hitResult == kAXErrorSuccess) {
+                for (int depth = 0;
+                     current.get() && depth < 32 && !budget.exhausted();
+                     ++depth) {
                     const QString role =
-                      copyAXString(current.get(), kAXRoleAttribute);
-                    if (role == QStringLiteral("AXApplication")) {
+                      copyAXString(current.get(), kAXRoleAttribute, budget);
+                    if (budget.exhausted() ||
+                        role == QStringLiteral("AXApplication")) {
                         break;
                     }
 
                     QRect geometry;
-                    if (copyAXFrame(current.get(), &geometry)) {
-                        geometry = geometry.intersected(window->geometry);
-                        const QString key = geometryKey(geometry);
-                        if (isUsefulGeometry(geometry, globalPosition) &&
-                            !seenGeometries.contains(key)) {
-                            candidates.append(
-                              { geometry,
-                                candidateDescription(current.get(), role) });
-                            seenGeometries.insert(key);
-                        }
+                    if (copyAXFrame(current.get(), &geometry, budget)) {
+                        elementGeometries.append(geometry);
                     }
 
-                    if (role == QStringLiteral("AXWindow")) {
+                    if (budget.exhausted() ||
+                        role == QStringLiteral("AXWindow")) {
                         break;
                     }
 
                     CFTypeRef parentValue = nullptr;
-                    if (AXUIElementCopyAttributeValue(
-                          current.get(), kAXParentAttribute, &parentValue) !=
-                          kAXErrorSuccess ||
+                    if (copyAXAttribute(current.get(),
+                                        kAXParentAttribute,
+                                        &parentValue,
+                                        budget) != kAXErrorSuccess ||
                         !parentValue ||
                         CFGetTypeID(parentValue) != AXUIElementGetTypeID()) {
                         if (parentValue) {
@@ -401,36 +388,13 @@ QList<SmartRegionCandidate> MacOsSmartRegionDetector::candidatesAt(
                 }
             }
         }
-    }
-
-    QStringList nameParts;
-    if (!window->ownerName.isEmpty()) {
-        nameParts.append(window->ownerName);
-    }
-    if (!window->windowName.isEmpty() &&
-        window->windowName != window->ownerName) {
-        nameParts.append(window->windowName);
-    }
-    QString windowDescription = QStringLiteral("Window");
-    if (!nameParts.isEmpty()) {
-        windowDescription +=
-          QStringLiteral(": ") + nameParts.join(QStringLiteral(" — "));
-    }
-
-    const QString windowKey = geometryKey(window->geometry);
-    if (!seenGeometries.contains(windowKey)) {
-        candidates.append({ window->geometry, windowDescription });
-    } else {
-        const auto duplicate = std::find_if(
-          candidates.begin(), candidates.end(), [&window](const auto& item) {
-              return item.geometry == window->geometry;
-          });
-        if (duplicate != candidates.end()) {
-            duplicate->description = windowDescription;
+        if (budget.exhausted()) {
+            elementGeometries.clear();
         }
     }
 
-    return candidates;
+    return makeSmartRegionCandidateChain(
+      elementGeometries, window->geometry, globalPosition);
 }
 
 bool MacOsSmartRegionDetector::accessibilityAvailable() const

@@ -6,15 +6,18 @@
 #include <QList>
 #include <QPoint>
 #include <QRect>
-#include <QString>
 
 #include <memory>
 
 struct SmartRegionCandidate
 {
     QRect geometry;
-    QString description;
 };
+
+QList<SmartRegionCandidate> makeSmartRegionCandidateChain(
+  const QList<QRect>& elementGeometries,
+  const QRect& windowGeometry,
+  const QPoint& globalPosition);
 
 class SmartRegionDetector
 {

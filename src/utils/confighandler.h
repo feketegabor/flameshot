@@ -94,6 +94,9 @@ public:
     CONFIG_GETTER_SETTER(drawThickness, setDrawThickness, int)
     CONFIG_GETTER_SETTER(drawFontSize, setDrawFontSize, int)
     CONFIG_GETTER_SETTER(drawCircleCounterSize, setDrawCircleCounterSize, int)
+    CONFIG_GETTER_SETTER(drawCircleCounterOutline,
+                         setDrawCircleCounterOutline,
+                         bool)
     CONFIG_GETTER_SETTER(drawPixelateSize, setDrawPixelateSize, int)
     CONFIG_GETTER_SETTER(drawRectangleSize, setDrawRectangleSize, int)
     CONFIG_GETTER_SETTER(drawMarkerSize, setDrawMarkerSize, int)
@@ -122,6 +125,8 @@ public:
     CONFIG_GETTER_SETTER(useJpgForClipboard, setUseJpgForClipboard, bool)
 #if defined(Q_OS_MACOS)
     CONFIG_GETTER_SETTER(useNativeFullscreen, setUseNativeFullscreen, bool)
+#endif
+#if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
     CONFIG_GETTER_SETTER(smartRegionDetection, setSmartRegionDetection, bool)
 #endif
     CONFIG_GETTER_SETTER(uploadWithoutConfirmation,
