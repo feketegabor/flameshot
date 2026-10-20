@@ -10,6 +10,7 @@
 #include <QPointer>
 #include <QVersionNumber>
 #include <QWindow>
+#include <functional>
 
 class ConfigWindow;
 class InfoWindow;
@@ -100,6 +101,7 @@ public:
 private:
     void onWindowVisibilityChanged(QWindow::Visibility newVisibility);
     int m_dockIconVisibleCount = 0;
+    std::function<void()> m_restoreCaptureFocus;
 #endif
 
 #if (defined(Q_OS_MACOS) || defined(Q_OS_WIN))

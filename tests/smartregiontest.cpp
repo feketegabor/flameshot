@@ -15,6 +15,7 @@ private slots:
     void clickAndDragUseDifferentPaths();
     void physicalWheelDirectionIsStable();
     void preselectionConsumesWheelBeforeToolSizing();
+    void chosenParentSurvivesLeafAndDepthChanges();
 };
 
 void SmartRegionTest::candidateChainRunsFromLeafToWindow()
@@ -78,6 +79,29 @@ void SmartRegionTest::preselectionConsumesWheelBeforeToolSizing()
     QCOMPARE(pendingCandidate.direction, 0);
     QVERIFY(!selected.consumed);
     QVERIFY(!disabled.consumed);
+}
+
+void SmartRegionTest::chosenParentSurvivesLeafAndDepthChanges()
+{
+    const QRect window(0, 0, 800, 600);
+    const QRect parent(50, 50, 400, 300);
+    const QRect child(70, 70, 100, 80);
+    const QRect sibling(200, 70, 100, 80);
+    const QRect intermediate(60, 60, 300, 150);
+    const auto chain = makeSmartRegionCandidateChain(
+      { sibling, intermediate, parent }, window, QPoint(220, 90));
+
+    const int retained =
+      SmartRegionInteraction::preferredCandidateIndex(chain, parent);
+    QCOMPARE(retained, 2);
+    QCOMPARE(chain.at(retained).geometry, parent);
+    QCOMPARE(SmartRegionInteraction::preferredCandidateIndex(chain, window), 3);
+
+    // Leaving a chosen region or switching back to the leaf restores normal
+    // hover tracking; a former leaf must not become a sticky parent.
+    QCOMPARE(SmartRegionInteraction::preferredCandidateIndex(chain, child), 0);
+    QCOMPARE(SmartRegionInteraction::preferredCandidateIndex(chain, {}), 0);
+    QCOMPARE(SmartRegionInteraction::preferredCandidateIndex({}, parent), -1);
 }
 
 QTEST_GUILESS_MAIN(SmartRegionTest)

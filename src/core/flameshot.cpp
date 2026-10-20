@@ -8,7 +8,9 @@
 #endif
 
 #if defined(Q_OS_MACOS)
+#include <QApplication>
 #include <QWindow>
+#include <memory>
 #include <objc/message.h>
 
 namespace {
@@ -36,6 +38,82 @@ void setActivationPolicyAccessory()
 }
 
 constexpr const char* visibleInDockProperty = "_visibleInDock";
+
+id cocoaObject(id object, const char* selector)
+{
+    return reinterpret_cast<id (*)(id, SEL)>(objc_msgSend)(
+      object, sel_registerName(selector));
+}
+
+bool sameApplication(id first, id second)
+{
+    return first && second &&
+           reinterpret_cast<BOOL (*)(id, SEL, id)>(objc_msgSend)(
+             first, sel_registerName("isEqual:"), second);
+}
+
+id frontmostApplication()
+{
+    return cocoaObject(
+      cocoaObject(reinterpret_cast<id>(objc_getClass("NSWorkspace")),
+                  "sharedWorkspace"),
+      "frontmostApplication");
+}
+
+using CaptureApplication = std::shared_ptr<objc_object>;
+
+CaptureApplication captureApplication()
+{
+    id application = frontmostApplication();
+    id current =
+      cocoaObject(reinterpret_cast<id>(objc_getClass("NSRunningApplication")),
+                  "currentApplication");
+    if (!application || sameApplication(application, current)) {
+        return {};
+    }
+    return CaptureApplication(cocoaObject(application, "retain"), [](id app) {
+        reinterpret_cast<void (*)(id, SEL)>(objc_msgSend)(
+          app, sel_registerName("release"));
+    });
+}
+
+void restoreCaptureApplication(const CaptureApplication& application)
+{
+    id current =
+      cocoaObject(reinterpret_cast<id>(objc_getClass("NSRunningApplication")),
+                  "currentApplication");
+    if (!application || !sameApplication(frontmostApplication(), current)) {
+        return;
+    }
+    // Do not take focus from a save dialog, pin or another Flameshot window.
+    if (QWidget* active = QApplication::activeWindow();
+        active && active->isVisible()) {
+        return;
+    }
+    if (reinterpret_cast<BOOL (*)(id, SEL)>(objc_msgSend)(
+          application.get(), sel_registerName("isTerminated"))) {
+        return;
+    }
+
+    id nsApp = cocoaObject(reinterpret_cast<id>(objc_getClass("NSApplication")),
+                           "sharedApplication");
+    const SEL yield = sel_registerName("yieldActivationToApplication:");
+    if (reinterpret_cast<BOOL (*)(id, SEL, SEL)>(objc_msgSend)(
+          nsApp, sel_registerName("respondsToSelector:"), yield)) {
+        // macOS 14+: transfer activation cooperatively without forcing it
+        // away from a different app chosen by the user.
+        reinterpret_cast<void (*)(id, SEL, id)>(objc_msgSend)(
+          nsApp, yield, application.get());
+        reinterpret_cast<BOOL (*)(id, SEL, id, unsigned long)>(objc_msgSend)(
+          application.get(),
+          sel_registerName("activateFromApplication:options:"),
+          current,
+          0);
+    } else {
+        reinterpret_cast<BOOL (*)(id, SEL, unsigned long)>(objc_msgSend)(
+          application.get(), sel_registerName("activateWithOptions:"), 0);
+    }
+}
 
 } // namespace
 
@@ -134,6 +212,11 @@ CaptureWidget* Flameshot::gui(const CaptureRequest& req)
     }
 
 #if defined(Q_OS_MACOS)
+    if (const CaptureApplication previousApplication = captureApplication()) {
+        m_restoreCaptureFocus = [previousApplication]() {
+            restoreCaptureApplication(previousApplication);
+        };
+    }
     // This is required on MacOS because of Mission Control. If you'll switch to
     // another Desktop you cannot take a new screenshot from the tray, you have
     // to switch back to the Flameshot Desktop manually. It is not obvious and a
@@ -167,6 +250,19 @@ CaptureWidget* Flameshot::gui(const CaptureRequest& req)
 
         m_captureWindow = new CaptureWidget(request);
 
+#if defined(Q_OS_MACOS)
+        connect(m_captureWindow, &QObject::destroyed, this, [this]() {
+            // Let the overlay disappear and export callbacks finish
+            // first.
+            QTimer::singleShot(0, this, [this]() {
+                if (!m_captureWindow && m_restoreCaptureFocus) {
+                    const auto restore = std::move(m_restoreCaptureFocus);
+                    restore();
+                }
+            });
+        });
+#endif
+
 #ifdef Q_OS_WIN
         m_captureWindow->show();
 #elif defined(Q_OS_MACOS)
@@ -177,6 +273,16 @@ CaptureWidget* Flameshot::gui(const CaptureRequest& req)
         }
         m_captureWindow->activateWindow();
         m_captureWindow->raise();
+        if (!ConfigHandler().useNativeFullscreen()) {
+            // Qt's floating level is below the Dock. Keep capture controls
+            // clickable even when an auto-hidden Dock is revealed.
+            id nativeWindow = cocoaObject(
+              reinterpret_cast<id>(m_captureWindow->winId()), "window");
+            reinterpret_cast<void (*)(id, SEL, long)>(objc_msgSend)(
+              nativeWindow,
+              sel_registerName("setLevel:"),
+              CGWindowLevelForKey(kCGDockWindowLevelKey) + 1);
+        }
 #else
         m_captureWindow->showFullScreen();
 //        m_captureWindow->show(); // For CaptureWidget Debugging under Linux

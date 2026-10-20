@@ -1,4 +1,4 @@
-find_package(Qt${QT_VERSION_MAJOR} CONFIG REQUIRED Core Gui Test)
+find_package(Qt${QT_VERSION_MAJOR} CONFIG REQUIRED Core Gui Widgets Test)
 
 add_executable(
   flameshot-smart-region-tests
@@ -37,3 +37,19 @@ elseif(WIN32)
 endif()
 
 add_test(NAME smart-region COMMAND flameshot-smart-region-tests)
+
+add_executable(
+  flameshot-selection-widget-tests
+  selectionwidgettest.cpp
+  ${CMAKE_SOURCE_DIR}/src/widgets/capture/selectionwidget.cpp
+  ${CMAKE_SOURCE_DIR}/src/utils/globalvalues.cpp)
+target_include_directories(
+  flameshot-selection-widget-tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(
+  flameshot-selection-widget-tests PRIVATE APP_VERSION="test" FLAMESHOT_GIT_HASH="test")
+target_link_libraries(
+  flameshot-selection-widget-tests
+  PRIVATE project_options Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Test)
+set_target_properties(flameshot-selection-widget-tests PROPERTIES AUTOMOC ON)
+add_test(NAME selection-widget COMMAND flameshot-selection-widget-tests)
+set_tests_properties(selection-widget PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

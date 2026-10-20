@@ -204,6 +204,7 @@ private:
     std::unique_ptr<SmartRegionDetector> m_smartRegionDetector;
     QList<SmartRegionCandidate> m_smartRegionCandidates;
     int m_smartRegionIndex{ -1 };
+    QRect m_preferredSmartRegionGeometry;
     QPoint m_pendingSmartRegionPosition;
     QTimer m_smartRegionUpdateTimer;
     QElapsedTimer m_smartRegionUpdateElapsed;

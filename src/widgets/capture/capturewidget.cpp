@@ -219,7 +219,16 @@ CaptureWidget::CaptureWidget(const CaptureRequest& req,
             screenForAreas = QGuiApplication::primaryScreen();
         }
         QRect r = screenForAreas ? screenForAreas->geometry() : QRect();
+#if defined(Q_OS_MACOS)
+        // The overlay captures the entire display, but its controls must stay
+        // clear of the Dock and menu bar, including on offset displays.
+        if (screenForAreas) {
+            r = screenForAreas->availableGeometry();
+            r.translate(-geometry().topLeft());
+        }
+#else
         r.moveTo(0, 0);
+#endif
         areas.append(r);
     } else {
         areas.append(rect());
@@ -334,7 +343,7 @@ CaptureWidget::~CaptureWidget()
         Flameshot::instance()->exportCapture(
           pixmap(), geometry, m_context.request);
     } else {
-        emit Flameshot::instance()->captureFailed();
+        emit Flameshot::instance() -> captureFailed();
     }
 }
 
@@ -1179,11 +1188,11 @@ void CaptureWidget::wheelEvent(QWheelEvent* e)
     if (smartRegionDelta == 0) {
         smartRegionDelta = e->angleDelta().y();
     }
-    const auto smartRegionWheel = SmartRegionInteraction::wheelDecision(
-      m_selection->isVisible(),
-      m_smartRegionDetector != nullptr,
-      smartRegionDelta,
-      e->inverted());
+    const auto smartRegionWheel =
+      SmartRegionInteraction::wheelDecision(m_selection->isVisible(),
+                                            m_smartRegionDetector != nullptr,
+                                            smartRegionDelta,
+                                            e->inverted());
     if (smartRegionWheel.consumed) {
 
         if (smartRegionDelta != 0) {
@@ -1518,38 +1527,27 @@ void CaptureWidget::updateSmartRegionCandidate()
         return;
     }
 
-    const QRect previousLeaf =
-      m_smartRegionCandidates.isEmpty()
-        ? QRect()
-        : m_smartRegionCandidates.constFirst().geometry;
-    const SmartRegionCandidate* previous = currentSmartRegionCandidate();
-    const QRect previousSelection = previous ? previous->geometry : QRect();
     const QRect oldGeometry = currentSmartRegionGeometry();
 
     QList<SmartRegionCandidate> candidates =
       m_smartRegionDetector->candidatesAt(
         mapToGlobal(m_pendingSmartRegionPosition));
-    int nextIndex = candidates.isEmpty() ? -1 : 0;
-    if (!candidates.isEmpty() &&
-        candidates.constFirst().geometry == previousLeaf &&
-        previousSelection.isValid()) {
-        for (int index = 0; index < candidates.size(); ++index) {
-            if (candidates.at(index).geometry == previousSelection) {
-                nextIndex = index;
-                break;
-            }
-        }
+    const int nextIndex = SmartRegionInteraction::preferredCandidateIndex(
+      candidates, m_preferredSmartRegionGeometry);
+    if (nextIndex < 0 ||
+        candidates.at(nextIndex).geometry != m_preferredSmartRegionGeometry) {
+        m_preferredSmartRegionGeometry = {};
     }
 
     m_smartRegionCandidates = std::move(candidates);
     m_smartRegionIndex = nextIndex;
     const QRect newGeometry = currentSmartRegionGeometry();
-    m_selection->setClickSelectionCandidate(newGeometry);
     update(paddedUpdateRect(oldGeometry).united(paddedUpdateRect(newGeometry)));
 }
 
 void CaptureWidget::clearSmartRegionCandidate()
 {
+    m_preferredSmartRegionGeometry = {};
     if (m_smartRegionCandidates.isEmpty() && m_smartRegionIndex < 0) {
         if (m_selection) {
             m_selection->setClickSelectionCandidate({});
@@ -1580,8 +1578,10 @@ bool CaptureWidget::navigateSmartRegion(int direction)
 
     const QRect oldGeometry = currentSmartRegionGeometry();
     m_smartRegionIndex = nextIndex;
+    // A wheel choice survives movement between children of this region.
+    m_preferredSmartRegionGeometry =
+      m_smartRegionCandidates.at(nextIndex).geometry;
     const QRect newGeometry = currentSmartRegionGeometry();
-    m_selection->setClickSelectionCandidate(newGeometry);
     update(paddedUpdateRect(oldGeometry).united(paddedUpdateRect(newGeometry)));
     return true;
 }
@@ -2305,6 +2305,7 @@ void CaptureWidget::drawErrorMessage(const QString& msg, QPainter* painter)
 
 void CaptureWidget::drawInactiveRegion(QPainter* painter)
 {
+    painter->save();
     QColor overlayColor(0, 0, 0, m_opacity);
     painter->setBrush(overlayColor);
     QRect r;
@@ -2318,6 +2319,7 @@ void CaptureWidget::drawInactiveRegion(QPainter* painter)
 
     painter->setClipRegion(grey);
     painter->drawRect(-1, -1, rect().width() + 1, rect().height() + 1);
+    painter->restore();
 }
 
 void CaptureWidget::drawSmartRegionCandidate(QPainter* painter)
@@ -2327,6 +2329,9 @@ void CaptureWidget::drawSmartRegionCandidate(QPainter* painter)
         return;
     }
 
+    // Click the preview actually presented, rather than a newer candidate
+    // awaiting its queued repaint.
+    m_selection->setClickSelectionCandidate(geometry);
     painter->save();
     QColor outline = m_uiColor;
     outline.setAlpha(245);
