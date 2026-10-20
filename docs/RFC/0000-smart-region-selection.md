@@ -3,8 +3,8 @@
 ### To be Reviewed By
 
 * Flameshot maintainers
-* macOS maintainers and users
-* Contributors interested in equivalent Windows and Linux backends
+* macOS and Windows maintainers and users
+* Contributors interested in a Linux backend
 
 ### Authors
 
@@ -63,7 +63,7 @@ It deliberately avoids an inline role/index label because that label can cover
 the content the user is trying to inspect. The selection can still be resized
 and annotated using existing Flameshot tools.
 
-The first backend targets macOS:
+The macOS backend uses native window and Accessibility APIs:
 
 1. `CGWindowListCopyWindowInfo` records normal, on-screen windows in front-to-
    back order before Flameshot's overlay exists.
@@ -83,35 +83,35 @@ The Windows backend follows the same contract:
    windows, with `GetWindowRect` as a fallback.
 3. Microsoft UI Automation starts from the recorded window handle, hit-tests
    its control-view descendants, and walks back through their parents.
-4. UI Automation calls run on a dedicated MTA worker with short connection,
-   transaction, and caller timeouts. A slow or unavailable provider therefore
-   falls back to the containing window without blocking the capture overlay.
+4. UI Automation calls run on a dedicated MTA worker with connection and
+   transaction timeouts, a request budget, and a bounded GUI wait. An unavailable
+   provider or expired request falls back to the containing window.
 5. Native screen coordinates are mapped to Qt logical coordinates per monitor,
    including mixed-scale displays.
 
 The detector is behind a platform-neutral interface. Every backend returns the
 same leaf-to-window candidate chain in global logical coordinates; the capture
-widget owns preview, navigation, and selection behavior. A backend can report
-that it is unavailable, in which case Flameshot retains the current manual
-selection behavior without installing any new event handling.
+widget owns preview, navigation, and selection behavior. Supported backends fall
+back to window geometry when Accessibility or UI Automation is unavailable.
+Unsupported platforms use a no-op detector and retain manual selection without
+installing smart-region event handling.
 
-The intended platform rollout is:
+The current fork implementation and proposed platform rollout are:
 
-* macOS: Window Server geometry plus Accessibility hit-testing, as described
-  above;
-* Windows: top-level window enumeration plus UI Automation hit-testing and
-  parent traversal;
-* X11: EWMH stacking and window geometry, with AT-SPI providing an optional
-  child-element hierarchy;
-* Wayland: a compositor-specific backend only when its APIs can provide the
-  same contract. The current screenshot portals do not provide arbitrary
-  foreign window and control geometry, so the generic backend remains disabled
-  rather than approximating or changing the manual workflow.
+* macOS, implemented: Window Server geometry plus Accessibility hit-testing,
+  as described above;
+* Windows, implemented: top-level window enumeration plus UI Automation
+  hit-testing and parent traversal;
+* X11, planned: EWMH stacking and window geometry, with AT-SPI providing an
+  optional child-element hierarchy. No Linux backend is implemented yet;
+* Wayland, unsupported: a future compositor-specific backend requires APIs that
+  provide the same contract. The current screenshot portals do not provide
+  arbitrary foreign window and control geometry, so the no-op detector retains
+  the manual workflow.
 
-The macOS backend is proposed first because it provides a working reference for
-the shared contract. Acceptance of this RFC should decide whether staged native
-backends are acceptable or whether multiple backends must be delivered in the
-first implementation pull request.
+This fork implements the shared contract on macOS and Windows. This draft RFC
+proposes that contract and staged native backends for upstream review; it does
+not imply upstream acceptance or Linux support.
 
 ### Configuration and permissions
 
@@ -127,9 +127,13 @@ permission UI.
 ## Performance Impact
 
 Window enumeration occurs once per capture. Pointer hit-testing is throttled to
-at most once every 35 milliseconds. Accessibility and UI Automation messaging
-use short timeouts so an unresponsive target application cannot indefinitely
-freeze the overlay. Painting uses only the current candidate rectangle.
+at most once every 35 milliseconds. Accessibility messaging and UI Automation
+connection/transaction calls use 80-millisecond limits within a 200-millisecond
+request budget. Windows waits up to 250 milliseconds for a worker result on the
+GUI thread; macOS performs its budgeted lookup on the GUI thread. These are
+best-effort limits, not process isolation or a guarantee against arbitrary
+provider stalls or COM teardown delays. Painting uses only the current candidate
+rectangle.
 
 The candidate hierarchy is recalculated when the pointer moves. Scrolling only
 changes an index in the already collected chain.
@@ -138,8 +142,11 @@ changes an index in the already collected chain.
 
 Existing config files remain valid; the new Boolean setting defaults to false.
 The manual drag gesture, committed selection, annotation tools, copy/save
-actions, and command-line behavior are unchanged. Unsupported platforms and
-users who do not opt in receive no behavior change.
+actions, and existing command-line options remain available. Smart-region click
+and wheel behavior applies only when enabled on a supported platform. Companion
+macOS fixes restore the previous application's focus when appropriate after
+capture and keep capture controls clear of the Dock and menu bar independently
+of this setting.
 
 The initial implementation supports macOS and Windows. Other platforms compile
 a no-op detector until they gain a backend.
@@ -149,8 +156,8 @@ a no-op detector until they gain a backend.
 ShareX collects top-level and child-window rectangles before showing its region
 overlay, ignores its own overlay window, highlights the first rectangle under
 the pointer, and commits that rectangle into the normal selection workflow. The
-proposed interaction follows that proven shape while replacing Win32 window
-enumeration with native macOS Window Server and Accessibility APIs.
+proposed interaction follows that proven shape using native macOS Window Server
+and Accessibility APIs, or Windows window geometry and UI Automation.
 
 Issue #4910 includes an earlier working macOS patch that demonstrates Window
 Server and Accessibility-based hover snapping. This RFC retains that native
