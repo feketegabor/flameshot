@@ -168,6 +168,13 @@ Flameshot::Flameshot()
     qApp->setStyleSheet(StyleSheet);
 
 #if defined(Q_OS_MACOS)
+    connect(qApp, &QCoreApplication::aboutToQuit, this, [this]() {
+        // CLI captures can exit their event loop before the deferred restore.
+        if (!m_captureWindow && m_restoreCaptureFocus) {
+            const auto restore = std::move(m_restoreCaptureFocus);
+            restore();
+        }
+    });
     // Request Screen Recording permission via the proper CoreGraphics API
     if (!CGPreflightScreenCaptureAccess()) {
         CGRequestScreenCaptureAccess();

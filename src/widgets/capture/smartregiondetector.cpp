@@ -41,8 +41,7 @@ QList<SmartRegionCandidate> makeSmartRegionCandidateChain(
     }
 
     for (const QRect& elementGeometry : elementGeometries) {
-        const QRect geometry =
-          elementGeometry.normalized().intersected(window);
+        const QRect geometry = elementGeometry.normalized().intersected(window);
         if (geometry.width() < 4 || geometry.height() < 4 ||
             !geometry.contains(globalPosition) || seen.contains(geometry)) {
             continue;

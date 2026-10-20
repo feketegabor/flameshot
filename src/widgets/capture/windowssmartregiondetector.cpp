@@ -5,10 +5,10 @@
 
 #define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
-#include <Windows.h>
-#include <ole2.h>
 #include <UIAutomation.h>
+#include <Windows.h>
 #include <dwmapi.h>
+#include <ole2.h>
 #include <wrl/client.h>
 
 #include <QGuiApplication>
@@ -41,10 +41,9 @@ struct MonitorEnumerationContext
 
 QRect rectFromNative(const RECT& rect)
 {
-    return { rect.left,
-             rect.top,
-             rect.right - rect.left,
-             rect.bottom - rect.top };
+    return {
+        rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top
+    };
 }
 
 bool validNativeRect(const RECT& rect)
@@ -58,13 +57,9 @@ bool containsPoint(const RECT& rect, const POINT& point)
            point.y >= rect.top && point.y < rect.bottom;
 }
 
-BOOL CALLBACK collectMonitor(HMONITOR monitor,
-                             HDC,
-                             LPRECT,
-                             LPARAM contextValue)
+BOOL CALLBACK collectMonitor(HMONITOR monitor, HDC, LPRECT, LPARAM contextValue)
 {
-    auto* context =
-      reinterpret_cast<MonitorEnumerationContext*>(contextValue);
+    auto* context = reinterpret_cast<MonitorEnumerationContext*>(contextValue);
     MONITORINFOEXW info{};
     info.cbSize = sizeof(info);
     if (!GetMonitorInfoW(monitor, &info)) {
@@ -109,17 +104,18 @@ QRect toLogicalRect(const QRect& nativeRect,
             continue;
         }
 
-        const double xScale = static_cast<double>(mapping.logicalGeometry.width()) /
-                              mapping.nativeGeometry.width();
+        const double xScale =
+          static_cast<double>(mapping.logicalGeometry.width()) /
+          mapping.nativeGeometry.width();
         const double yScale =
           static_cast<double>(mapping.logicalGeometry.height()) /
           mapping.nativeGeometry.height();
-        const int left = static_cast<int>(std::floor(
-          mapping.logicalGeometry.x() +
-          (nativePart.x() - mapping.nativeGeometry.x()) * xScale));
-        const int top = static_cast<int>(std::floor(
-          mapping.logicalGeometry.y() +
-          (nativePart.y() - mapping.nativeGeometry.y()) * yScale));
+        const int left = static_cast<int>(
+          std::floor(mapping.logicalGeometry.x() +
+                     (nativePart.x() - mapping.nativeGeometry.x()) * xScale));
+        const int top = static_cast<int>(
+          std::floor(mapping.logicalGeometry.y() +
+                     (nativePart.y() - mapping.nativeGeometry.y()) * yScale));
         const int right = static_cast<int>(std::ceil(
           mapping.logicalGeometry.x() +
           (nativePart.x() + nativePart.width() - mapping.nativeGeometry.x()) *
@@ -146,18 +142,20 @@ POINT toNativePoint(const QPoint& logicalPoint,
             continue;
         }
 
-        const double xScale = static_cast<double>(mapping.nativeGeometry.width()) /
-                              mapping.logicalGeometry.width();
+        const double xScale =
+          static_cast<double>(mapping.nativeGeometry.width()) /
+          mapping.logicalGeometry.width();
         const double yScale =
           static_cast<double>(mapping.nativeGeometry.height()) /
           mapping.logicalGeometry.height();
-        return { mapping.nativeGeometry.x() +
-                   static_cast<LONG>(std::lround(
-                     (logicalPoint.x() - mapping.logicalGeometry.x()) * xScale)),
-                 mapping.nativeGeometry.y() +
-                   static_cast<LONG>(std::lround(
-                     (logicalPoint.y() - mapping.logicalGeometry.y()) *
-                     yScale)) };
+        return {
+            mapping.nativeGeometry.x() +
+              static_cast<LONG>(std::lround(
+                (logicalPoint.x() - mapping.logicalGeometry.x()) * xScale)),
+            mapping.nativeGeometry.y() +
+              static_cast<LONG>(std::lround(
+                (logicalPoint.y() - mapping.logicalGeometry.y()) * yScale))
+        };
     }
     return { logicalPoint.x(), logicalPoint.y() };
 }
@@ -187,12 +185,13 @@ public:
         const quint64 requestId = ++m_nextRequestId;
         m_pendingRequest = Request{ requestId, window, position };
         m_requestReady.notify_one();
-        if (!m_resultReady.wait_for(
-              lock,
-              std::chrono::milliseconds(250),
-              [this, requestId]() {
-                  return m_stopping || m_completedRequestId == requestId;
-              }) ||
+        if (!m_resultReady.wait_for(lock,
+                                    std::chrono::milliseconds(250),
+                                    [this, requestId]() {
+                                        return m_stopping ||
+                                               m_completedRequestId ==
+                                                 requestId;
+                                    }) ||
             m_completedRequestId != requestId) {
             return {};
         }
@@ -315,8 +314,8 @@ private:
             }
 
             BOOL isRoot = FALSE;
-            if (SUCCEEDED(
-                  automation->CompareElements(current.Get(), root.Get(), &isRoot)) &&
+            if (SUCCEEDED(automation->CompareElements(
+                  current.Get(), root.Get(), &isRoot)) &&
                 isRoot) {
                 break;
             }
@@ -333,8 +332,7 @@ private:
 
     void run()
     {
-        const HRESULT comResult =
-          CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+        const HRESULT comResult = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
         if (FAILED(comResult)) {
             return;
         }
@@ -435,10 +433,8 @@ struct WindowsSmartRegionDetector::Impl
         }
 
         DWORD cloaked = 0;
-        if (SUCCEEDED(DwmGetWindowAttribute(window,
-                                            DWMWA_CLOAKED,
-                                            &cloaked,
-                                            sizeof(cloaked))) &&
+        if (SUCCEEDED(DwmGetWindowAttribute(
+              window, DWMWA_CLOAKED, &cloaked, sizeof(cloaked))) &&
             cloaked != 0) {
             return;
         }
@@ -464,7 +460,8 @@ struct WindowsSmartRegionDetector::Impl
             !GetWindowRect(window, &nativeRect)) {
             return;
         }
-        if (!validNativeRect(nativeRect) || nativeRect.right - nativeRect.left < 20 ||
+        if (!validNativeRect(nativeRect) ||
+            nativeRect.right - nativeRect.left < 20 ||
             nativeRect.bottom - nativeRect.top < 20) {
             return;
         }
@@ -480,8 +477,8 @@ struct WindowsSmartRegionDetector::Impl
 
     const Window* windowAt(const QPoint& position) const
     {
-        const auto found =
-          std::find_if(windows.cbegin(), windows.cend(), [&position](const Window& window) {
+        const auto found = std::find_if(
+          windows.cbegin(), windows.cend(), [&position](const Window& window) {
               return window.logicalGeometry.contains(position);
           });
         return found == windows.cend() ? nullptr : &(*found);
