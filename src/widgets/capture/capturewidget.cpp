@@ -23,6 +23,7 @@
 #include "widgets/capture/modificationcommand.h"
 #include "widgets/capture/notifierbox.h"
 #include "widgets/capture/overlaymessage.h"
+#include "widgets/capture/smartregioninteraction.h"
 #include "widgets/draggablewidgetmaker.h"
 #include "widgets/orientablepushbutton.h"
 #include "widgets/panel/sidepanelwidget.h"
@@ -49,34 +50,6 @@
 #define MOUSE_DISTANCE_TO_START_MOVING 3
 
 auto const MOUSE_WHEEL_TRESHOLD = 60;
-
-namespace {
-constexpr bool smartRegionOwnsWheel(bool selectionVisible,
-                                    bool smartRegionEnabled)
-{
-    return !selectionVisible && smartRegionEnabled;
-}
-
-static_assert(smartRegionOwnsWheel(false, true));
-static_assert(!smartRegionOwnsWheel(true, true));
-static_assert(!smartRegionOwnsWheel(false, false));
-static_assert(!smartRegionOwnsWheel(true, false));
-
-constexpr int smartRegionNavigationDirection(int delta, bool inverted)
-{
-    // Candidate indices run from the deepest element toward its parents.
-    // Normalize Qt's delta so the physical gesture has the same meaning with
-    // both traditional and macOS natural scrolling.
-    const int physicalDelta = inverted ? -delta : delta;
-    return physicalDelta > 0 ? 1 : physicalDelta < 0 ? -1 : 0;
-}
-
-static_assert(smartRegionNavigationDirection(-1, true) == 1);
-static_assert(smartRegionNavigationDirection(1, true) == -1);
-static_assert(smartRegionNavigationDirection(1, false) == 1);
-static_assert(smartRegionNavigationDirection(-1, false) == -1);
-static_assert(smartRegionNavigationDirection(0, false) == 0);
-}
 
 // CaptureWidget is the main component used to capture the screen. It contains
 // an area of selection with its respective buttons.
@@ -257,7 +230,7 @@ CaptureWidget::CaptureWidget(const CaptureRequest& req,
 
     initButtons();
     initSelection(); // button handler must be initialized before
-#if defined(Q_OS_MACOS)
+#if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
     initSmartRegionDetection();
 #endif
     initShortcuts(); // must be called after initSelection
@@ -505,17 +478,19 @@ void CaptureWidget::showxywh()
 void CaptureWidget::initHelpMessage()
 {
     QList<QPair<QString, QString>> keyMap;
-#if defined(Q_OS_MACOS)
+#if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
     if (m_smartRegionDetector) {
         keyMap << std::pair(
           tr("Mouse"), tr("Click a detected region or drag a custom area"));
-        keyMap << std::pair(
-          tr("Mouse Wheel"), tr("Scroll up for parent, down for child"));
+        keyMap << std::pair(tr("Mouse Wheel"),
+                            tr("Scroll up for parent, down for child"));
+#if defined(Q_OS_MACOS)
         if (!m_smartRegionDetector->accessibilityAvailable()) {
             keyMap << std::pair(
               tr("Accessibility"),
               tr("Enable in General settings to detect UI elements"));
         }
+#endif
     } else {
         keyMap << std::pair(tr("Mouse"), tr("Select screenshot area"));
     }
@@ -536,7 +511,9 @@ void CaptureWidget::initHelpMessage()
         }
     }
     keyMap << std::pair(tr("Mouse Wheel"),
-                        tr("Change tool size after selection"));
+                        m_smartRegionDetector
+                          ? tr("Change tool size after selection")
+                          : tr("Change tool size"));
     keyMap << std::pair(tr("Right Click"), tr("Show color picker"));
     keyMap << std::pair(ConfigHandler().shortcut("TYPE_TOGGLE_PANEL"),
                         tr("Open side panel"));
@@ -1199,12 +1176,16 @@ void CaptureWidget::wheelEvent(QWheelEvent* e)
      * */
     // Smart-region mode owns the complete preselection scroll gesture. Do not
     // fall through to tool sizing while candidate detection is still pending.
-    if (smartRegionOwnsWheel(m_selection->isVisible(),
-                             m_smartRegionDetector != nullptr)) {
-        int smartRegionDelta = e->pixelDelta().y();
-        if (smartRegionDelta == 0) {
-            smartRegionDelta = e->angleDelta().y();
-        }
+    int smartRegionDelta = e->pixelDelta().y();
+    if (smartRegionDelta == 0) {
+        smartRegionDelta = e->angleDelta().y();
+    }
+    const auto smartRegionWheel = SmartRegionInteraction::wheelDecision(
+      m_selection->isVisible(),
+      m_smartRegionDetector != nullptr,
+      smartRegionDelta,
+      e->inverted());
+    if (smartRegionWheel.consumed) {
 
         if (smartRegionDelta != 0) {
             if (!currentSmartRegionCandidate()) {
@@ -1216,10 +1197,9 @@ void CaptureWidget::wheelEvent(QWheelEvent* e)
               qAbs(e->angleDelta().y()) >= MOUSE_WHEEL_TRESHOLD;
             if (discreteWheel || (current - m_lastSmartRegionWheel) > 180) {
                 m_lastSmartRegionWheel = current;
-                const int direction = smartRegionNavigationDirection(
-                  smartRegionDelta, e->inverted());
-                if (direction != 0 && currentSmartRegionCandidate()) {
-                    navigateSmartRegion(direction);
+                if (smartRegionWheel.direction != 0 &&
+                    currentSmartRegionCandidate()) {
+                    navigateSmartRegion(smartRegionWheel.direction);
                 }
             }
         }
@@ -1485,7 +1465,7 @@ void CaptureWidget::initSelection()
 
 void CaptureWidget::initSmartRegionDetection()
 {
-#if defined(Q_OS_MACOS)
+#if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
     if (!m_config.smartRegionDetection()) {
         return;
     }
@@ -2333,9 +2313,8 @@ void CaptureWidget::drawInactiveRegion(QPainter* painter)
 
 void CaptureWidget::drawSmartRegionCandidate(QPainter* painter)
 {
-    const SmartRegionCandidate* candidate = currentSmartRegionCandidate();
     const QRect geometry = currentSmartRegionGeometry();
-    if (!candidate || !geometry.isValid() || m_selection->isVisible()) {
+    if (!geometry.isValid() || m_selection->isVisible()) {
         return;
     }
 

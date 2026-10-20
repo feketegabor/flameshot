@@ -265,6 +265,9 @@ if (WIN32)
     target_link_libraries(
             flameshot
             qhotkey
+            dwmapi
+            ole32
+            uiautomationcore
     )
 endif ()
 

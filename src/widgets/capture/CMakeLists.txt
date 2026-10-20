@@ -10,6 +10,7 @@ target_sources(
         overlaymessage.h
         selectionwidget.h
         smartregiondetector.h
+        smartregioninteraction.h
         magnifierwidget.h
         notifierbox.h
         modificationcommand.h)
@@ -34,4 +35,11 @@ if(APPLE)
             flameshot
             PRIVATE macossmartregiondetector.h
                     macossmartregiondetector.cpp)
+endif()
+
+if(WIN32)
+    target_sources(
+            flameshot
+            PRIVATE windowssmartregiondetector.h
+                    windowssmartregiondetector.cpp)
 endif()

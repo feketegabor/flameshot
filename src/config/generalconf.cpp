@@ -62,6 +62,8 @@ GeneralConf::GeneralConf(QWidget* parent)
 #endif
 #if defined(Q_OS_MACOS)
     initUseNativeFullscreen();
+#endif
+#if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
     initSmartRegionDetection();
 #endif
 #if defined(Q_OS_UNIX) && !defined(Q_OS_MACOS)
@@ -136,7 +138,11 @@ void GeneralConf::_updateComponents(bool allowEmptySavePath)
 #endif
 #if defined(Q_OS_MACOS)
     m_useNativeFullscreen->setChecked(config.useNativeFullscreen());
+#endif
+#if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
     m_smartRegionDetection->setChecked(config.smartRegionDetection());
+#endif
+#if defined(Q_OS_MACOS)
     m_smartRegionAccessibilityButton->setEnabled(config.smartRegionDetection());
 #endif
 #if defined(Q_OS_UNIX) && !defined(Q_OS_MACOS)
@@ -971,22 +977,29 @@ void GeneralConf::useNativeFullscreenChanged(bool checked)
 {
     ConfigHandler().setUseNativeFullscreen(checked);
 }
+#endif
 
+#if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
 void GeneralConf::initSmartRegionDetection()
 {
     m_smartRegionDetection =
       new QCheckBox(tr("Enable smart region selection"), this);
-    m_smartRegionDetection->setToolTip(
+    QString tooltip =
       tr("Hover over a window or interface element, use the mouse wheel to "
          "scroll up toward its parent or down toward its child, and click to "
-         "select it. Dragging still creates a custom rectangle. UI element "
-         "detection requires macOS Accessibility permission."));
+         "select it. Dragging still creates a custom rectangle.");
+#if defined(Q_OS_MACOS)
+    tooltip +=
+      tr(" UI element detection requires macOS Accessibility permission.");
+#endif
+    m_smartRegionDetection->setToolTip(tooltip);
     m_scrollAreaLayout->addWidget(m_smartRegionDetection);
     connect(m_smartRegionDetection,
             &QCheckBox::clicked,
             this,
             &GeneralConf::smartRegionDetectionChanged);
 
+#if defined(Q_OS_MACOS)
     m_smartRegionAccessibilityButton =
       new QPushButton(tr("Grant Accessibility Access..."), this);
     m_smartRegionAccessibilityButton->setToolTip(
@@ -997,14 +1010,19 @@ void GeneralConf::initSmartRegionDetection()
             &QPushButton::clicked,
             this,
             &GeneralConf::requestSmartRegionAccessibility);
+#endif
 }
 
 void GeneralConf::smartRegionDetectionChanged(bool checked)
 {
     ConfigHandler().setSmartRegionDetection(checked);
+#if defined(Q_OS_MACOS)
     m_smartRegionAccessibilityButton->setEnabled(checked);
+#endif
 }
+#endif
 
+#if defined(Q_OS_MACOS)
 void GeneralConf::requestSmartRegionAccessibility()
 {
     auto detector = SmartRegionDetector::create();

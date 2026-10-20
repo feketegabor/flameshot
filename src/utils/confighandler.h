@@ -122,6 +122,8 @@ public:
     CONFIG_GETTER_SETTER(useJpgForClipboard, setUseJpgForClipboard, bool)
 #if defined(Q_OS_MACOS)
     CONFIG_GETTER_SETTER(useNativeFullscreen, setUseNativeFullscreen, bool)
+#endif
+#if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
     CONFIG_GETTER_SETTER(smartRegionDetection, setSmartRegionDetection, bool)
 #endif
     CONFIG_GETTER_SETTER(uploadWithoutConfirmation,
