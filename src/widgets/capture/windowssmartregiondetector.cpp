@@ -129,7 +129,7 @@ BOOL CALLBACK collectMonitor(HMONITOR monitor, HDC, LPRECT, LPARAM contextValue)
 // be slow, and a hung application must not freeze the overlay. The GUI thread
 // only waits briefly. A slower lookup keeps running, and its result is kept,
 // so asking again for the same window and position (the capture widget does
-// while the pointer rests) returns it without starting over.
+// while the pointer rests) returns it.
 class AutomationWorker
 {
 public:
@@ -155,7 +155,7 @@ public:
         const Request request{ window, position };
         std::unique_lock lock(m_mutex);
         if (m_finished == request) {
-            return m_result;
+            return takeResult();
         }
         if (m_running != request && m_pending != request) {
             // A new position supersedes the lookup in progress.
@@ -166,12 +166,21 @@ public:
         m_done.wait_for(lock, GUI_WAIT, [&]() {
             return m_stopping || m_finished == request;
         });
-        return m_finished == request ? m_result : QList<QRect>();
+        return m_finished == request ? takeResult() : QList<QRect>();
     }
 
     bool available() const { return m_available.load(); }
 
 private:
+    // A result is handed out once: asking again starts a new lookup, which
+    // finds elements an application has added since, e.g. once Chromium has
+    // built its tree.
+    QList<QRect> takeResult()
+    {
+        m_finished.reset();
+        return std::exchange(m_result, {});
+    }
+
     using Clock = std::chrono::steady_clock;
 
     struct Request

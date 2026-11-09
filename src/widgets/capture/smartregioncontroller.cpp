@@ -15,7 +15,7 @@ constexpr int LOOKUP_INTERVAL_MS = 35;
 // lookup while the pointer rests, so the highlight settles on the element that
 // a click will select before the user clicks. On Windows, these lookups also
 // collect results that took longer than the GUI thread waits.
-constexpr std::array<int, 4> REFINE_DELAYS_MS = { 150, 400, 1000, 2000 };
+constexpr std::array<int, 5> REFINE_DELAYS_MS = { 150, 400, 1000, 2000, 3500 };
 
 // A touchpad swipe produces a stream of small wheel events.
 constexpr qint64 CONTINUOUS_STEP_INTERVAL_MS = 180;

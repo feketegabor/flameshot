@@ -88,6 +88,10 @@ The Windows backend follows the same contract:
    most 60 milliseconds and shows the window meanwhile; a slower lookup keeps
    running for up to 1.5 seconds, and its result is picked up by the follow-up
    lookups while the pointer rests.
+6. Chromium-based applications (Chrome, Edge, Electron) only expose their
+   web content after a screen-reader style `OBJID_CLIENT` request for their
+   render widget window. The backend makes that request once per window, and
+   the follow-up lookups find the elements once the tree has been built.
 5. Native screen coordinates are mapped to Qt logical coordinates per monitor,
    including mixed-scale displays.
 
@@ -150,8 +154,8 @@ require a permission prompt.
 ## Performance Impact
 
 Window enumeration occurs once per capture. Pointer hit-testing is throttled to
-at most once every 35 milliseconds, and up to four follow-up lookups run while
-the pointer rests (after 150, 400, 1000 and 2000 milliseconds). Accessibility and AT-SPI
+at most once every 35 milliseconds, and up to five follow-up lookups run while
+the pointer rests (after 150, 400, 1000, 2000 and 3500 milliseconds). Accessibility and AT-SPI
 calls use 80-millisecond limits within a 200-millisecond request budget on the
 GUI thread. UI Automation runs on a worker thread with 300-millisecond call
 limits and a 1.5-second budget; the GUI thread waits at most 60 milliseconds. These

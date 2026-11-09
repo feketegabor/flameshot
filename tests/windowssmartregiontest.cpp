@@ -188,7 +188,13 @@ void WindowsSmartRegionTest::findsElementsInsideWindow()
         return regions.size() >= minimumRegions &&
                area(regions.first()) <= maximumLeafShare * area(regions.last());
     };
-    QTRY_VERIFY_WITH_TIMEOUT(foundElement(), timeoutMs);
+    QTRY_VERIFY2_WITH_TIMEOUT(
+      foundElement(),
+      qPrintable(QStringLiteral("Only found %1 regions, the deepest %2x%3")
+                   .arg(regions.size())
+                   .arg(regions.isEmpty() ? 0 : regions.first().width())
+                   .arg(regions.isEmpty() ? 0 : regions.first().height())),
+      timeoutMs);
     qInfo() << "Found" << regions.size() << "regions under" << logical
             << "after" << elapsed.elapsed() << "ms:" << regions;
     for (const QRect& region : regions) {
