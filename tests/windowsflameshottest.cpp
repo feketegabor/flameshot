@@ -12,6 +12,7 @@
 
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QGuiApplication>
 #include <QPixmap>
 #include <QProcess>
@@ -111,17 +112,24 @@ private:
 void WindowsFlameshotTest::initTestCase()
 {
     QVERIFY(QFile::exists(QStringLiteral(FLAMESHOT_EXE)));
-    QSettings config(QSettings::IniFormat,
-                     QSettings::UserScope,
-                     QStringLiteral("flameshot"),
-                     QStringLiteral("flameshot"));
-    config.setValue(QStringLiteral("smartRegionDetection"), true);
-    config.setValue(QStringLiteral("showHelp"), false);
-    config.setValue(QStringLiteral("checkForUpdates"), false);
-    config.setValue(QStringLiteral("showDesktopNotification"), false);
-    config.setValue(QStringLiteral("showAbortNotification"), false);
-    config.setValue(QStringLiteral("showStartupLaunchMessage"), false);
-    config.sync();
+    // Windows builds keep their config next to flameshot.exe by default,
+    // and the installer build in the user profile; write both.
+    QSettings portable(QFileInfo(QStringLiteral(FLAMESHOT_EXE)).absolutePath() +
+                         QStringLiteral("/flameshot.ini"),
+                       QSettings::IniFormat);
+    QSettings profile(QSettings::IniFormat,
+                      QSettings::UserScope,
+                      QStringLiteral("flameshot"),
+                      QStringLiteral("flameshot"));
+    for (QSettings* config : { &portable, &profile }) {
+        config->setValue(QStringLiteral("smartRegionDetection"), true);
+        config->setValue(QStringLiteral("showHelp"), false);
+        config->setValue(QStringLiteral("checkForUpdates"), false);
+        config->setValue(QStringLiteral("showDesktopNotification"), false);
+        config->setValue(QStringLiteral("showAbortNotification"), false);
+        config->setValue(QStringLiteral("showStartupLaunchMessage"), false);
+        config->sync();
+    }
     m_log = m_dir.filePath(QStringLiteral("input.log"));
     QDir().mkpath(QStringLiteral("screenshots"));
 
