@@ -80,20 +80,25 @@ The Windows backend follows the same contract:
 1. `EnumWindows` records visible top-level windows before the overlay appears.
 2. `DwmGetWindowAttribute` supplies extended frame bounds and filters cloaked
    windows, with `GetWindowRect` as a fallback.
-3. Microsoft UI Automation starts from the recorded window handle, hit-tests
-   its control-view descendants, and walks back through their parents.
-4. UI Automation calls run on a dedicated MTA worker with connection and
-   transaction timeouts. Each level of the element tree is fetched with its
-   bounding rectangles in one cached `FindAll` call. The GUI thread waits at
-   most 60 milliseconds and shows the window meanwhile; a slower lookup keeps
-   running for up to 1.5 seconds, and its result is picked up by the follow-up
-   lookups while the pointer rests.
+3. MSAA hit-testing (`accHitTest`) asks the application, inside the innermost
+   child window under the pointer, which element is at the position, one call
+   per level, and `accParent` provides the containing elements. This stays
+   fast in large trees such as web pages. When an application only reports
+   the window, Microsoft UI Automation is searched instead: each level of
+   control-view children is fetched with its bounding rectangles in one
+   cached `FindAll` call.
+4. Lookups run on a dedicated worker thread, and UI Automation calls have
+   connection and transaction timeouts. The GUI thread waits at most 60
+   milliseconds and shows the window meanwhile; a slower lookup keeps running
+   for up to 1.5 seconds, and its result is picked up by the follow-up lookups
+   while the pointer rests. Closing the overlay does not wait for an
+   application that hangs.
+5. Native screen coordinates are mapped to Qt logical coordinates per monitor,
+   including mixed-scale displays.
 6. Chromium-based applications (Chrome, Edge, Electron) only expose their
    web content after a screen-reader style `OBJID_CLIENT` request for their
    render widget window. The backend makes that request once per window, and
    the follow-up lookups find the elements once the tree has been built.
-5. Native screen coordinates are mapped to Qt logical coordinates per monitor,
-   including mixed-scale displays.
 
 The X11 backend follows the same contract:
 
