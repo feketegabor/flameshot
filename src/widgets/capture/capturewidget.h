@@ -19,6 +19,7 @@
 #include "widgets/capture/capturetoolobjects.h"
 #include "widgets/capture/magnifierwidget.h"
 #include "widgets/capture/selectionwidget.h"
+#include "widgets/capture/smartregiondetector.h"
 
 #include <QMessageBox>
 #include <QPointer>
@@ -202,9 +203,9 @@ private:
     quint64 m_lastMouseWheel;
     // Null unless smart region selection is enabled and supported.
     SmartRegionController* m_smartRegion = nullptr;
-    // Whether the wheel event being handled comes from a touchpad that
-    // scrolls content opposite to the fingers, which Qt does not report.
-    bool m_naturalTouchpadScroll = false;
+#if defined(Q_OS_WIN)
+    TouchpadScrollTracker m_touchpadScroll;
+#endif
     QPointer<CaptureToolButton> m_sizeIndButton;
     // Last pressed button
     QPointer<CaptureToolButton> m_activeButton;

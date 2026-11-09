@@ -723,17 +723,15 @@ QList<QRect> WindowsSmartRegionDetector::regionsAt(const QPoint& globalPosition)
 }
 } // namespace
 
-void trackTouchpadScroll(const void* message, bool* naturalScroll)
+namespace {
+// HID usage of precision touchpads.
+constexpr USHORT DIGITIZER_USAGE_PAGE = 0x0D;
+constexpr USHORT TOUCHPAD_USAGE = 0x05;
+// A wheel message this soon after touchpad input comes from the touchpad.
+constexpr ULONGLONG TOUCHPAD_INPUT_WINDOW_MS = 150;
+
+bool touchpadScrollIsNatural()
 {
-    if (static_cast<const MSG*>(message)->message != WM_MOUSEWHEEL) {
-        return;
-    }
-    INPUT_MESSAGE_SOURCE source{};
-    if (!GetCurrentInputMessageSource(&source) ||
-        source.deviceType != IMDT_TOUCHPAD) {
-        *naturalScroll = false;
-        return;
-    }
     // 0, the default, means that moving the fingers up scrolls the content
     // down; other values reverse that. See "Precision touchpad tuning".
     DWORD direction = 0;
@@ -746,7 +744,43 @@ void trackTouchpadScroll(const void* message, bool* naturalScroll)
       nullptr,
       &direction,
       &size);
-    *naturalScroll = direction == 0;
+    return direction == 0;
+}
+}
+
+TouchpadScrollTracker::~TouchpadScrollTracker()
+{
+    if (m_registered) {
+        RAWINPUTDEVICE device{
+            DIGITIZER_USAGE_PAGE, TOUCHPAD_USAGE, RIDEV_REMOVE, nullptr
+        };
+        RegisterRawInputDevices(&device, 1, sizeof(device));
+    }
+}
+
+void TouchpadScrollTracker::handleMessage(const void* message)
+{
+    const auto* msg = static_cast<const MSG*>(message);
+    if (!m_registered && msg->hwnd) {
+        // Raw touchpad input goes to the window that asks for it, in
+        // addition to the usual mouse and wheel messages.
+        RAWINPUTDEVICE device{
+            DIGITIZER_USAGE_PAGE, TOUCHPAD_USAGE, 0, msg->hwnd
+        };
+        m_registered =
+          RegisterRawInputDevices(&device, 1, sizeof(device)) != FALSE;
+    }
+
+    if (msg->message == WM_INPUT) {
+        m_lastTouchpadInput = GetTickCount64();
+    } else if (msg->message == WM_MOUSEWHEEL) {
+        INPUT_MESSAGE_SOURCE source{};
+        const bool fromTouchpad =
+          (GetCurrentInputMessageSource(&source) &&
+           source.deviceType == IMDT_TOUCHPAD) ||
+          GetTickCount64() - m_lastTouchpadInput < TOUCHPAD_INPUT_WINDOW_MS;
+        m_naturalScroll = fromTouchpad && touchpadScrollIsNatural();
+    }
 }
 
 bool nativeSmartRegionDetectorSupported()

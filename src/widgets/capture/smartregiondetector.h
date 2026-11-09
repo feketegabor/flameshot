@@ -45,11 +45,30 @@ QList<QRect> buildRegionChain(const QList<QRect>& elementGeometries,
                               const QPoint& globalPosition);
 
 #if defined(Q_OS_WIN)
-// For a native Windows wheel message, sets naturalScroll to whether it comes
-// from a touchpad that scrolls content opposite to the fingers (Windows'
-// default). Other messages are ignored. Qt does not report this as an
-// inverted wheel event, unlike on macOS.
-void trackTouchpadScroll(const void* message, bool* naturalScroll);
+// Recognizes wheel messages from a precision touchpad that scrolls content
+// opposite to the fingers, which is the Windows default. Qt does not report
+// them as inverted wheel events, unlike on macOS, and Windows delivers them
+// as ordinary mouse wheel messages. The touchpad's raw input, which arrives
+// while fingers are on it, tells them apart from mouse wheel messages.
+class TouchpadScrollTracker
+{
+public:
+    TouchpadScrollTracker() = default;
+    ~TouchpadScrollTracker();
+    TouchpadScrollTracker(const TouchpadScrollTracker&) = delete;
+    TouchpadScrollTracker& operator=(const TouchpadScrollTracker&) = delete;
+
+    // Pass every native message of the window that receives wheel input.
+    void handleMessage(const void* message);
+
+    // Whether the last wheel message came from such a touchpad.
+    bool naturalScroll() const { return m_naturalScroll; }
+
+private:
+    bool m_registered = false;
+    bool m_naturalScroll = false;
+    unsigned long long m_lastTouchpadInput = 0;
+};
 #endif
 
 #if defined(Q_OS_MACOS)
