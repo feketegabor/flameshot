@@ -36,6 +36,10 @@ public:
     // is rate-limited so a single swipe does not skip several levels.
     void step(int direction, bool continuousInput);
 
+    // Keep the current region until the next pointer move, e.g. while a
+    // mouse button is held, so the region pressed is the one selected.
+    void suspend();
+
     // Forget the current regions, e.g. while a selection is being drawn.
     void clear();
 

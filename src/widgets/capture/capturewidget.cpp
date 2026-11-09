@@ -813,6 +813,10 @@ void CaptureWidget::paintEvent(QPaintEvent* paintEvent)
 
 void CaptureWidget::showColorPicker(const QPoint& pos)
 {
+    // The click that confirms the color must not select a region.
+    if (m_smartRegion) {
+        m_smartRegion->clear();
+    }
     // Try to select new object if current pos out of active object
     auto toolItem = activeToolObject();
     if (!toolItem || (toolItem && !toolItem->boundingRect().contains(pos))) {
@@ -915,6 +919,10 @@ void CaptureWidget::mousePressEvent(QMouseEvent* e)
         return;
     } else if (e->button() == Qt::LeftButton) {
         m_mouseIsClicked = true;
+        if (m_smartRegion) {
+            // The press chose the highlighted region; keep it until release.
+            m_smartRegion->suspend();
+        }
 
         // Click using a tool excluding tool MOVE
         if (startDrawObjectTool(m_mousePressedPos)) {
@@ -1047,10 +1055,6 @@ void CaptureWidget::mouseMoveEvent(QMouseEvent* e)
             }
         }
     }
-
-    if (m_smartRegion) {
-        m_smartRegion->clear();
-    }
     updateCursor();
 }
 
@@ -1165,6 +1169,11 @@ void CaptureWidget::wheelEvent(QWheelEvent* e)
     // Before a selection exists, the wheel walks the detected regions and
     // must not change the tool size.
     if (m_smartRegion && !m_selection->isVisible()) {
+        if (!smartRegionActive()) {
+            e->accept();
+            return;
+        }
+        m_smartRegion->pointerMoved(mapToGlobal(e->position().toPoint()));
         // pixelDelta() is precise on touchpads; angleDelta() covers wheels.
         int delta = e->pixelDelta().y();
         if (delta == 0) {
@@ -1227,6 +1236,9 @@ void CaptureWidget::resizeEvent(QResizeEvent* e)
         m_panel->setFixedHeight(height());
         m_buttonHandler->updateScreenRegions(rect());
     }
+    if (m_smartRegion) {
+        m_selection->setClickSelectionCandidate(smartRegionInWidget());
+    }
 }
 
 void CaptureWidget::moveEvent(QMoveEvent* e)
@@ -1240,6 +1252,11 @@ void CaptureWidget::moveEvent(QMoveEvent* e)
         move(m_selectedScreen->geometry().topLeft());
     }
 #endif
+    // The highlighted region is in global coordinates, the click target in
+    // widget coordinates.
+    if (m_smartRegion) {
+        m_selection->setClickSelectionCandidate(smartRegionInWidget());
+    }
 }
 
 void CaptureWidget::changeEvent(QEvent* e)
@@ -1471,13 +1488,16 @@ void CaptureWidget::initSmartRegion()
                 update(paddedUpdateRect(globalToWidget(previous))
                          .united(paddedUpdateRect(region)));
             });
-    m_smartRegion->pointerMoved(QCursor::pos());
+    // Not needed when a region was passed on the command line.
+    if (smartRegionActive()) {
+        m_smartRegion->pointerMoved(QCursor::pos());
+    }
 }
 
 bool CaptureWidget::smartRegionActive() const
 {
     return m_smartRegion && !m_selection->isVisible() && !m_activeButton &&
-           !m_activeTool;
+           !m_activeTool && !(m_colorPicker && m_colorPicker->isVisible());
 }
 
 QRect CaptureWidget::smartRegionInWidget() const

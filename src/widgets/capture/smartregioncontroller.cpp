@@ -56,9 +56,6 @@ void SmartRegionController::pointerMoved(const QPoint& globalPosition)
 
 void SmartRegionController::step(int direction, bool continuousInput)
 {
-    if (!m_hasLookup) {
-        lookUp();
-    }
     if (direction == 0 || m_index < 0) {
         return;
     }
@@ -75,6 +72,12 @@ void SmartRegionController::step(int direction, bool continuousInput)
                              static_cast<int>(m_regions.size()) - 1);
     m_preferred = m_regions.at(index);
     setIndex(index);
+}
+
+void SmartRegionController::suspend()
+{
+    m_rateLimit.stop();
+    m_refineTimer.stop();
 }
 
 void SmartRegionController::clear()
@@ -112,8 +115,11 @@ void SmartRegionController::refine()
     if (!m_hasLookup || m_pointer != m_lookedUpAt) {
         return;
     }
+    // A lookup cut short by a slow application falls back to the window.
+    // Only accept a hierarchy that is at least as deep as the current one,
+    // so the highlight never jumps to a coarser region before a click.
     QList<QRect> regions = m_detector->regionsAt(m_pointer);
-    if (regions != m_regions) {
+    if (regions.size() >= m_regions.size() && regions != m_regions) {
         setRegions(std::move(regions));
     }
     if (++m_refineAttempt < static_cast<int>(REFINE_DELAYS_MS.size())) {

@@ -199,6 +199,10 @@ child elements, or the common case where the intended window is not focused.
 * Accessibility and UI Automation quality depend on the target application's
   implementation. Some games, remote desktops, canvas-based interfaces, and
   custom controls may expose only a window or a coarse container.
+* On Linux, Qt, Chromium, Electron and Firefox applications only expose
+  AT-SPI when desktop accessibility is enabled; otherwise only GTK
+  applications provide elements and the rest fall back to whole windows.
+  Flatpak and Snap sandboxes restrict access to the accessibility bus.
 * Platform-specific backends require separate testing and maintenance.
 * A staged rollout temporarily gives supported platforms more capability than
   unsupported platforms, even though existing behavior remains unchanged.

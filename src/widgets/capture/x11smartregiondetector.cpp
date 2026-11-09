@@ -18,6 +18,7 @@
 #include <QGuiApplication>
 #include <QHash>
 #include <QScreen>
+#include <QSet>
 
 #if QT_CONFIG(xcb)
 #include <xcb/xcb.h>
@@ -152,8 +153,11 @@ public:
         if (address.isEmpty()) {
             return nullptr;
         }
-        QDBusConnection bus = QDBusConnection::connectToBus(
-          address, QStringLiteral("flameshot-smart-region-atspi"));
+        // Connect afresh for each capture: Qt reuses a named connection even
+        // when it was lost or the accessibility bus has since restarted.
+        const QString name = QStringLiteral("flameshot-smart-region-atspi");
+        QDBusConnection::disconnectFromBus(name);
+        QDBusConnection bus = QDBusConnection::connectToBus(address, name);
         if (!bus.isConnected()) {
             return nullptr;
         }
@@ -171,10 +175,13 @@ public:
         return m_failed || m_elapsed.elapsed() >= LOOKUP_BUDGET_MS;
     }
 
-    // The application owning the given process, if it is registered.
+    // The application owning the given process, if it is registered. The
+    // applications are listed once per capture, with a budget of their own.
     Reference application(uint pid)
     {
         if (!m_applicationsListed) {
+            m_applicationsListed = true;
+            startLookup();
             const Reference root{ QStringLiteral("org.a11y.atspi.Registry"),
                                   QStringLiteral(
                                     "/org/a11y/atspi/accessible/root") };
@@ -189,8 +196,7 @@ public:
                     m_applications.insert(id.toUInt(), app);
                 }
             }
-            // Try again on the next lookup if the budget cut this one short.
-            m_applicationsListed = !exhausted();
+            startLookup();
         }
         return m_applications.value(pid);
     }
@@ -272,7 +278,7 @@ private:
                      const QVariantList& arguments)
     {
         const qint64 remaining = LOOKUP_BUDGET_MS - m_elapsed.elapsed();
-        if (m_failed || remaining <= 0) {
+        if (m_failed || remaining <= 0 || m_unresponsive.contains(service)) {
             return {};
         }
         QDBusMessage message =
@@ -284,9 +290,13 @@ private:
           static_cast<int>(std::min<qint64>(remaining, MESSAGE_TIMEOUT_MS)));
         if (reply.type() != QDBusMessage::ReplyMessage ||
             reply.arguments().isEmpty()) {
-            // A timeout means the application is busy; stop asking it.
-            m_failed = reply.errorName() ==
-                       QLatin1String("org.freedesktop.DBus.Error.NoReply");
+            // A timeout means the application is busy. Stop this lookup, and
+            // do not ask that application again during this capture.
+            if (reply.errorName() ==
+                QLatin1String("org.freedesktop.DBus.Error.NoReply")) {
+                m_failed = true;
+                m_unresponsive.insert(service);
+            }
             return {};
         }
         return reply.arguments().constFirst();
@@ -297,6 +307,7 @@ private:
     bool m_failed = false;
     bool m_applicationsListed = false;
     QHash<uint, Reference> m_applications;
+    QSet<QString> m_unresponsive;
 };
 
 class X11SmartRegionDetector : public SmartRegionDetector
@@ -486,26 +497,36 @@ QList<QRect> X11SmartRegionDetector::elementsAt(const Window& window,
         return {};
     }
 
-    // Pick the application's top-level element that best matches the
-    // window, then descend to the deepest element under the pointer.
+    // Pick the application's top-level element that matches the window best
+    // (a dialog and its main window can both contain the pointer), then
+    // descend to the deepest element under the pointer.
+    const auto area = [](const QRect& rect) {
+        return rect.isEmpty() ? 0.0 : double(rect.width()) * rect.height();
+    };
     AtSpi::Reference current;
-    qint64 bestOverlap = 0;
+    QRect geometry;
+    double bestMatch = 0;
     for (const AtSpi::Reference& frame : m_atSpi->children(application)) {
         const QRect frameGeometry = m_atSpi->extents(frame);
         if (!frameGeometry.contains(nativePoint)) {
             continue;
         }
-        const QRect overlap = frameGeometry.intersected(window.nativeGeometry);
-        const qint64 area = qint64(overlap.width()) * overlap.height();
-        if (area > bestOverlap) {
-            bestOverlap = area;
+        const double overlap =
+          area(frameGeometry.intersected(window.nativeGeometry));
+        const double match = overlap / (area(frameGeometry) +
+                                        area(window.nativeGeometry) - overlap);
+        if (match > bestMatch) {
+            bestMatch = match;
             current = frame;
+            geometry = frameGeometry;
         }
     }
 
     QList<QRect> elements;
     for (int depth = 0; !current.isNull() && depth < MAX_DEPTH; ++depth) {
-        const QRect geometry = m_atSpi->extents(current);
+        if (depth > 0) {
+            geometry = m_atSpi->extents(current);
+        }
         if (!geometry.contains(nativePoint)) {
             break;
         }

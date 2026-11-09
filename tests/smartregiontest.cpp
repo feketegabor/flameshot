@@ -60,6 +60,8 @@ private slots:
     void chainOutsideWindowIsEmpty();
     void repeatedPositionDoesNotReplaceHighlight();
     void restingPointerRefinesLazyHierarchy();
+    void refineNeverMakesHighlightCoarser();
+    void suspendKeepsPressedRegion();
     void wheelWalksTowardParentAndBack();
     void chosenParentSurvivesMovementInside();
     void continuousScrollingIsRateLimited();
@@ -118,6 +120,26 @@ void SmartRegionTest::restingPointerRefinesLazyHierarchy()
     QCOMPARE(changed.size(), 2);
     QCOMPARE(changed.last().at(0).toRect(), PANEL);
     QCOMPARE(changed.last().at(1).toRect(), BUTTON);
+}
+
+void SmartRegionTest::refineNeverMakesHighlightCoarser()
+{
+    // A later lookup that timed out only returns the window.
+    Fixture f({ { BUTTON, PANEL, WINDOW }, { WINDOW } });
+    f.controller->pointerMoved(QPoint(100, 100));
+    QTRY_VERIFY(*f.lookups >= 3);
+    QCOMPARE(f.controller->current(), BUTTON);
+}
+
+void SmartRegionTest::suspendKeepsPressedRegion()
+{
+    Fixture f({ { PANEL, WINDOW }, { BUTTON, PANEL, WINDOW } });
+    f.controller->pointerMoved(QPoint(100, 100));
+    // The button is pressed on the coarse region before a refine runs.
+    f.controller->suspend();
+    QTest::qWait(300);
+    QCOMPARE(f.controller->current(), PANEL);
+    QCOMPARE(*f.lookups, 1);
 }
 
 void SmartRegionTest::wheelWalksTowardParentAndBack()

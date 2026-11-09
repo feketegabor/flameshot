@@ -12,7 +12,7 @@ project(
   LANGUAGES CXX)
 set(PROJECT_NAME_CAPITALIZED "Flameshot")
 
-include(CTest)
+option(FLAMESHOT_BUILD_TESTS "Build the unit tests (needs Qt Test)" OFF)
 
 include(FetchContent)
 #Must be set before fetching external content!
@@ -158,7 +158,8 @@ if(WIN32 OR APPLE)
 endif()
 
 add_subdirectory(src)
-if(BUILD_TESTING)
+if(FLAMESHOT_BUILD_TESTS)
+  enable_testing()
   add_subdirectory(tests)
 endif()
 
