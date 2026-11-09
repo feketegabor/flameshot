@@ -101,6 +101,11 @@ public:
 
 protected:
     void paintEvent(QPaintEvent* paintEvent) override;
+#if defined(Q_OS_WIN)
+    bool nativeEvent(const QByteArray& eventType,
+                     void* message,
+                     qintptr* result) override;
+#endif
     void mousePressEvent(QMouseEvent* mouseEvent) override;
     void mouseMoveEvent(QMouseEvent* mouseEvent) override;
     void mouseReleaseEvent(QMouseEvent* mouseEvent) override;
@@ -197,6 +202,9 @@ private:
     quint64 m_lastMouseWheel;
     // Null unless smart region selection is enabled and supported.
     SmartRegionController* m_smartRegion = nullptr;
+    // Whether the wheel event being handled comes from a touchpad that
+    // scrolls content opposite to the fingers, which Qt does not report.
+    bool m_naturalTouchpadScroll = false;
     QPointer<CaptureToolButton> m_sizeIndButton;
     // Last pressed button
     QPointer<CaptureToolButton> m_activeButton;

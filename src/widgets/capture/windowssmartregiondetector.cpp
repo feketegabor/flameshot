@@ -723,6 +723,32 @@ QList<QRect> WindowsSmartRegionDetector::regionsAt(const QPoint& globalPosition)
 }
 } // namespace
 
+void trackTouchpadScroll(const void* message, bool* naturalScroll)
+{
+    if (static_cast<const MSG*>(message)->message != WM_MOUSEWHEEL) {
+        return;
+    }
+    INPUT_MESSAGE_SOURCE source{};
+    if (!GetCurrentInputMessageSource(&source) ||
+        source.deviceType != IMDT_TOUCHPAD) {
+        *naturalScroll = false;
+        return;
+    }
+    // 0, the default, means that moving the fingers up scrolls the content
+    // down; other values reverse that. See "Precision touchpad tuning".
+    DWORD direction = 0;
+    DWORD size = sizeof(direction);
+    RegGetValueW(
+      HKEY_CURRENT_USER,
+      L"Software\\Microsoft\\Windows\\CurrentVersion\\PrecisionTouchPad",
+      L"ScrollDirection",
+      RRF_RT_REG_DWORD,
+      nullptr,
+      &direction,
+      &size);
+    *naturalScroll = direction == 0;
+}
+
 bool nativeSmartRegionDetectorSupported()
 {
     return true;

@@ -230,6 +230,9 @@ child elements, or the common case where the intended window is not focused.
 * Leaf, parent, reverse-to-child, and containing-window navigation.
 * Physical upward scrolling moves toward the parent with both natural and
   traditional scrolling enabled; downward scrolling moves toward the child.
+  On Windows, Qt does not report natural touchpad scrolling, so the backend
+  reads the precision touchpad's `ScrollDirection` setting for wheel messages
+  that come from a touchpad.
 * Before a selection is committed, every wheel event is consumed by smart-region
   navigation and never changes the annotation tool size.
 * Click-to-commit followed by resize, annotation, copy, and save.

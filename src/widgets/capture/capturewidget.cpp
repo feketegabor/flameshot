@@ -1164,6 +1164,17 @@ void CaptureWidget::keyReleaseEvent(QKeyEvent* e)
     }
 }
 
+#if defined(Q_OS_WIN)
+bool CaptureWidget::nativeEvent(const QByteArray& eventType,
+                                void* message,
+                                qintptr* result)
+{
+    // Called with the native message before Qt delivers the wheel event.
+    trackTouchpadScroll(message, &m_naturalTouchpadScroll);
+    return QWidget::nativeEvent(eventType, message, result);
+}
+#endif
+
 void CaptureWidget::wheelEvent(QWheelEvent* e)
 {
     // Before a selection exists, the wheel walks the detected regions and
@@ -1181,7 +1192,7 @@ void CaptureWidget::wheelEvent(QWheelEvent* e)
         }
         // With natural scrolling the delta is inverted. Normalize it so that
         // pushing up always selects the parent.
-        if (e->inverted()) {
+        if (e->inverted() || m_naturalTouchpadScroll) {
             delta = -delta;
         }
         const bool continuous =
