@@ -97,8 +97,8 @@ The Windows backend follows the same contract:
    including mixed-scale displays.
 6. Chromium-based applications (Chrome, Edge, Electron) only expose their
    web content after a screen-reader style `OBJID_CLIENT` request for their
-   render widget window. The backend makes that request once per window, and
-   the follow-up lookups find the elements once the tree has been built.
+   window, which the MSAA hit-test makes. They build the tree in about a
+   second, and the follow-up lookups then find the elements.
 
 The X11 backend follows the same contract:
 

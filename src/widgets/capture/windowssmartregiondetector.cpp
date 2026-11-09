@@ -32,7 +32,6 @@
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <set>
 #include <thread>
 #include <utility>
 
@@ -228,7 +227,6 @@ private:
         ComPtr<IUIAutomation2> automation;
         ComPtr<IUIAutomationCondition> controlView;
         ComPtr<IUIAutomationCacheRequest> cacheRequest;
-        std::set<HWND> preparedWindows;
     };
 
     // A result is handed out once: asking again starts a new lookup, which
@@ -244,29 +242,6 @@ private:
     {
         return state.generation.load() == lookup.generation &&
                Clock::now() < lookup.deadline;
-    }
-
-    static BOOL CALLBACK enableChromiumAccessibility(HWND child, LPARAM)
-    {
-        wchar_t name[64] = {};
-        GetClassNameW(child, name, static_cast<int>(std::size(name)));
-        if (wcscmp(name, L"Chrome_RenderWidgetHostHWND") == 0) {
-            ComPtr<IAccessible> accessible;
-            AccessibleObjectFromWindow(
-              child, OBJID_CLIENT, IID_PPV_ARGS(&accessible));
-        }
-        return TRUE;
-    }
-
-    // Chromium-based applications (Chrome, Edge, Electron) only build the
-    // element tree of their web content after a screen-reader style request
-    // for the client object. They build it in the background, so later
-    // lookups find the elements.
-    static void prepareWindow(State& state, HWND window)
-    {
-        if (state.preparedWindows.insert(window).second) {
-            EnumChildWindows(window, enableChromiumAccessibility, 0);
-        }
     }
 
     // The innermost visible child window under the position.
@@ -304,7 +279,10 @@ private:
     }
 
     // MSAA: hit-test down to the deepest element, then collect it and its
-    // parents up to the window.
+    // parents up to the window. Chromium-based applications (Chrome, Edge,
+    // Electron) build the element tree of their web content in the
+    // background after this request for the client object, so a later lookup
+    // finds the elements.
     static QList<QRect> msaaChain(const State& state,
                                   const Lookup& lookup,
                                   HWND window)
@@ -459,7 +437,6 @@ private:
             chain->clear();
             return true;
         }
-        prepareWindow(state, window);
 
         // Prefer MSAA when it finds an element inside the innermost window.
         RECT childRect{};
