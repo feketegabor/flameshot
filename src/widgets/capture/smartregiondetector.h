@@ -9,30 +9,43 @@
 
 #include <memory>
 
-struct SmartRegionCandidate
-{
-    QRect geometry;
-};
-
-QList<SmartRegionCandidate> makeSmartRegionCandidateChain(
-  const QList<QRect>& elementGeometries,
-  const QRect& windowGeometry,
-  const QPoint& globalPosition);
-
+// Finds the windows and UI elements under the pointer using native platform
+// APIs, so that a click can select them without dragging a rectangle.
 class SmartRegionDetector
 {
 public:
     virtual ~SmartRegionDetector() = default;
 
-    // Capture the window stacking state before the Flameshot overlay appears.
-    virtual void refresh() = 0;
+    // Record the visible windows. Call this before the capture overlay is
+    // shown, so the overlay itself is not part of the snapshot.
+    virtual void snapshotWindows() = 0;
 
-    // Return candidates from the deepest UI element to its containing window.
-    virtual QList<SmartRegionCandidate> candidatesAt(
-      const QPoint& globalPosition) = 0;
+    // Regions under globalPosition, in Qt global logical coordinates, ordered
+    // from the deepest UI element to the window that contains it. Returns an
+    // empty list when there is no window under the position.
+    virtual QList<QRect> regionsAt(const QPoint& globalPosition) = 0;
 
-    virtual bool accessibilityAvailable() const = 0;
-    virtual void requestAccessibilityPermission() = 0;
+    // False when only whole windows can be detected, for example because the
+    // macOS Accessibility permission has not been granted.
+    virtual bool elementDetectionAvailable() const { return true; }
 
+    // Whether this build and session have a detector backend.
+    static bool isSupported();
+
+    // Returns nullptr when isSupported() is false.
     static std::unique_ptr<SmartRegionDetector> create();
 };
+
+// Turns raw element geometries (deepest first) into the region chain returned
+// by SmartRegionDetector::regionsAt(): regions are clipped to the window, and
+// tiny, duplicate or unrelated ones are dropped. The window always ends the
+// chain.
+QList<QRect> buildRegionChain(const QList<QRect>& elementGeometries,
+                              const QRect& windowGeometry,
+                              const QPoint& globalPosition);
+
+#if defined(Q_OS_MACOS)
+// UI element detection on macOS needs the Accessibility permission.
+bool macOsAccessibilityTrusted();
+void requestMacOsAccessibilityPermission();
+#endif

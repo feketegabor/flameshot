@@ -3,66 +3,58 @@
 
 #include "smartregiondetector.h"
 
-#if defined(Q_OS_MACOS)
-#include "macossmartregiondetector.h"
-#elif defined(Q_OS_WIN)
-#include "windowssmartregiondetector.h"
+// Each native backend defines these two functions. The build system adds
+// exactly one backend source and FLAMESHOT_SMART_REGION_BACKEND, or none.
+#if defined(FLAMESHOT_SMART_REGION_BACKEND)
+bool nativeSmartRegionDetectorSupported();
+std::unique_ptr<SmartRegionDetector> createNativeSmartRegionDetector();
 #endif
 
 namespace {
-#if !defined(Q_OS_MACOS) && !defined(Q_OS_WIN)
-class NullSmartRegionDetector : public SmartRegionDetector
-{
-public:
-    void refresh() override {}
+// Smaller regions are usually decorations or separators, not useful targets.
+constexpr int MIN_REGION_SIDE = 4;
+}
 
-    QList<SmartRegionCandidate> candidatesAt(const QPoint&) override
-    {
+QList<QRect> buildRegionChain(const QList<QRect>& elementGeometries,
+                              const QRect& windowGeometry,
+                              const QPoint& globalPosition)
+{
+    const QRect window = windowGeometry.normalized();
+    if (!window.isValid() || !window.contains(globalPosition)) {
         return {};
     }
 
-    bool accessibilityAvailable() const override { return false; }
-    void requestAccessibilityPermission() override {}
-};
-#endif
-}
-
-QList<SmartRegionCandidate> makeSmartRegionCandidateChain(
-  const QList<QRect>& elementGeometries,
-  const QRect& windowGeometry,
-  const QPoint& globalPosition)
-{
-    QList<SmartRegionCandidate> candidates;
-    QList<QRect> seen;
-    const QRect window = windowGeometry.normalized();
-
-    if (!window.isValid() || !window.contains(globalPosition)) {
-        return candidates;
-    }
-
-    for (const QRect& elementGeometry : elementGeometries) {
-        const QRect geometry = elementGeometry.normalized().intersected(window);
-        if (geometry.width() < 4 || geometry.height() < 4 ||
-            !geometry.contains(globalPosition) || seen.contains(geometry)) {
+    QList<QRect> chain;
+    for (const QRect& element : elementGeometries) {
+        const QRect region = element.normalized().intersected(window);
+        if (region.width() < MIN_REGION_SIDE ||
+            region.height() < MIN_REGION_SIDE ||
+            !region.contains(globalPosition) || chain.contains(region)) {
             continue;
         }
-        candidates.append({ geometry });
-        seen.append(geometry);
+        chain.append(region);
     }
+    if (!chain.contains(window)) {
+        chain.append(window);
+    }
+    return chain;
+}
 
-    if (!seen.contains(window)) {
-        candidates.append({ window });
-    }
-    return candidates;
+bool SmartRegionDetector::isSupported()
+{
+#if defined(FLAMESHOT_SMART_REGION_BACKEND)
+    return nativeSmartRegionDetectorSupported();
+#else
+    return false;
+#endif
 }
 
 std::unique_ptr<SmartRegionDetector> SmartRegionDetector::create()
 {
-#if defined(Q_OS_MACOS)
-    return std::make_unique<MacOsSmartRegionDetector>();
-#elif defined(Q_OS_WIN)
-    return std::make_unique<WindowsSmartRegionDetector>();
-#else
-    return std::make_unique<NullSmartRegionDetector>();
+#if defined(FLAMESHOT_SMART_REGION_BACKEND)
+    if (nativeSmartRegionDetectorSupported()) {
+        return createNativeSmartRegionDetector();
+    }
 #endif
+    return nullptr;
 }

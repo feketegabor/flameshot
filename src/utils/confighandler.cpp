@@ -97,9 +97,7 @@ static QMap<class QString, QSharedPointer<ValueHandler>>
 #if defined(Q_OS_MACOS)
     OPTION("useNativeFullscreen"         ,Bool               ( false         )),
 #endif
-#if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
     OPTION("smartRegionDetection"        ,Bool               ( false         )),
-#endif
     OPTION("uploadWithoutConfirmation"   ,Bool               ( false         )),
     OPTION("saveAfterCopy"               ,Bool               ( false         )),
     OPTION("savePath"                    ,ExistingDir        (               )),

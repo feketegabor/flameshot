@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Flameshot Contributors
 
-#include "windowssmartregiondetector.h"
+// Windows backend: top-level windows come from EnumWindows and DWM, and the
+// UI elements inside them from UI Automation.
+
+#include "smartregiondetector.h"
 #include "smartregiongeometry.h"
 
 #define NOMINMAX
@@ -32,6 +35,18 @@ using Microsoft::WRL::ComPtr;
 
 namespace {
 using SmartRegionGeometry::ScreenMapping;
+
+constexpr int MIN_WINDOW_SIDE = 20;
+
+// UI Automation calls run on a worker thread. A request is abandoned after
+// its budget, and the GUI thread waits slightly longer before falling back
+// to the window, so a hung provider cannot freeze the overlay.
+constexpr std::chrono::milliseconds REQUEST_BUDGET(200);
+constexpr std::chrono::milliseconds GUI_WAIT(250);
+constexpr DWORD PROVIDER_TIMEOUT_MS = 80;
+constexpr int MAX_DEPTH = 32;
+constexpr int MAX_VISITED_ELEMENTS = 1024;
+constexpr int MAX_SIBLINGS = 512;
 using SmartRegionGeometry::toLogicalRect;
 
 struct MonitorEnumerationContext
@@ -148,14 +163,11 @@ public:
         }
         const quint64 requestId = m_state->latestRequestId.fetch_add(1) + 1;
         m_state->pendingRequest =
-          Request{ requestId,
-                   window,
-                   position,
-                   Clock::now() + std::chrono::milliseconds(200) };
+          Request{ requestId, window, position, Clock::now() + REQUEST_BUDGET };
         m_state->requestReady.notify_one();
         if (!m_state->resultReady.wait_for(
               lock,
-              std::chrono::milliseconds(250),
+              GUI_WAIT,
               [this, requestId]() {
                   return m_state->stopping.load() ||
                          m_state->initializationFailed ||
@@ -220,7 +232,8 @@ private:
             static_cast<qint64>(geometry.right - geometry.left) *
               (geometry.bottom - geometry.top),
         };
-        if (depth >= 32 || *visited >= 1024 || !active(state, request)) {
+        if (depth >= MAX_DEPTH || *visited >= MAX_VISITED_ELEMENTS ||
+            !active(state, request)) {
             return best;
         }
 
@@ -229,8 +242,9 @@ private:
             return best;
         }
 
-        for (int siblingCount = 0; child && siblingCount < 512 &&
-                                   *visited < 1024 && active(state, request);
+        for (int siblingCount = 0;
+             child && siblingCount < MAX_SIBLINGS &&
+             *visited < MAX_VISITED_ELEMENTS && active(state, request);
              ++siblingCount) {
             ++*visited;
             RECT childRect{};
@@ -295,7 +309,8 @@ private:
         ComPtr<IUIAutomationElement> current =
           deepestElementAt(state, request, walker, root.Get());
         QList<QRect> geometries;
-        for (int depth = 0; current && depth < 32 && active(state, request);
+        for (int depth = 0;
+             current && depth < MAX_DEPTH && active(state, request);
              ++depth) {
             RECT geometry{};
             if (elementRectAt(state, request, current.Get(), &geometry)) {
@@ -343,8 +358,9 @@ private:
                                        nullptr,
                                        CLSCTX_INPROC_SERVER,
                                        IID_PPV_ARGS(&automation))) &&
-            SUCCEEDED(automation->put_ConnectionTimeout(80)) &&
-            SUCCEEDED(automation->put_TransactionTimeout(80)) &&
+            SUCCEEDED(automation->put_ConnectionTimeout(PROVIDER_TIMEOUT_MS)) &&
+            SUCCEEDED(
+              automation->put_TransactionTimeout(PROVIDER_TIMEOUT_MS)) &&
             SUCCEEDED(automation->get_ControlViewWalker(&walker)) && walker) {
             state->available.store(true);
         }
@@ -390,144 +406,141 @@ private:
     std::unique_ptr<State> m_state;
     std::thread m_thread;
 };
-}
 
-struct WindowsSmartRegionDetector::Impl
+class WindowsSmartRegionDetector : public SmartRegionDetector
 {
+public:
+    void snapshotWindows() override;
+    QList<QRect> regionsAt(const QPoint& globalPosition) override;
+    bool elementDetectionAvailable() const override
+    {
+        return m_automation.available();
+    }
+
+private:
     struct Window
     {
         HWND handle;
         QRect nativeGeometry;
     };
 
-    QList<Window> windows;
-    QList<ScreenMapping> screenMappings;
-    AutomationWorker automation;
-
-    static BOOL CALLBACK collectWindow(HWND window, LPARAM contextValue)
+    static BOOL CALLBACK collectWindow(HWND window, LPARAM detector)
     {
-        auto* self = reinterpret_cast<Impl*>(contextValue);
-        self->appendWindow(window);
+        reinterpret_cast<WindowsSmartRegionDetector*>(detector)->addWindow(
+          window);
         return TRUE;
     }
 
-    void appendWindow(HWND window)
-    {
-        if (!IsWindowVisible(window) || IsIconic(window) ||
-            GetAncestor(window, GA_ROOT) != window ||
-            window == GetDesktopWindow() || window == GetShellWindow()) {
-            return;
-        }
+    void addWindow(HWND window);
 
-        DWORD processId = 0;
-        GetWindowThreadProcessId(window, &processId);
-        if (processId == 0 || processId == GetCurrentProcessId()) {
-            return;
-        }
-
-        DWORD cloaked = 0;
-        if (SUCCEEDED(DwmGetWindowAttribute(
-              window, DWMWA_CLOAKED, &cloaked, sizeof(cloaked))) &&
-            cloaked != 0) {
-            return;
-        }
-
-        const LONG_PTR extendedStyle = GetWindowLongPtrW(window, GWL_EXSTYLE);
-        if ((extendedStyle & WS_EX_LAYERED) != 0) {
-            // TRANSPARENT alone only changes painting order. Layered windows
-            // with this flag pass mouse input through to the window below.
-            if ((extendedStyle & WS_EX_TRANSPARENT) != 0) {
-                return;
-            }
-            BYTE alpha = 255;
-            DWORD flags = 0;
-            if (GetLayeredWindowAttributes(window, nullptr, &alpha, &flags) &&
-                (flags & LWA_ALPHA) != 0 && alpha == 0) {
-                return;
-            }
-        }
-
-        RECT nativeRect{};
-        if (FAILED(DwmGetWindowAttribute(window,
-                                         DWMWA_EXTENDED_FRAME_BOUNDS,
-                                         &nativeRect,
-                                         sizeof(nativeRect))) &&
-            !GetWindowRect(window, &nativeRect)) {
-            return;
-        }
-        if (!validNativeRect(nativeRect) ||
-            nativeRect.right - nativeRect.left < 20 ||
-            nativeRect.bottom - nativeRect.top < 20) {
-            return;
-        }
-
-        const QRect nativeGeometry = rectFromNative(nativeRect);
-        windows.append({ window, nativeGeometry });
-    }
-
-    const Window* windowAt(const QPoint& nativePosition) const
-    {
-        const auto found = std::find_if(
-          windows.cbegin(),
-          windows.cend(),
-          [&nativePosition](const Window& window) {
-              return window.nativeGeometry.contains(nativePosition);
-          });
-        return found == windows.cend() ? nullptr : &(*found);
-    }
+    // Front to back, in the order EnumWindows reports them.
+    QList<Window> m_windows;
+    QList<ScreenMapping> m_screens;
+    AutomationWorker m_automation;
 };
 
-WindowsSmartRegionDetector::WindowsSmartRegionDetector()
-  : m_impl(std::make_unique<Impl>())
-{}
-
-WindowsSmartRegionDetector::~WindowsSmartRegionDetector() = default;
-
-void WindowsSmartRegionDetector::refresh()
+void WindowsSmartRegionDetector::snapshotWindows()
 {
-    m_impl->windows.clear();
-    m_impl->screenMappings.clear();
+    m_windows.clear();
+    m_screens.clear();
 
-    MonitorEnumerationContext context{ &m_impl->screenMappings,
-                                       QGuiApplication::screens() };
+    MonitorEnumerationContext context{ &m_screens, QGuiApplication::screens() };
     EnumDisplayMonitors(
       nullptr, nullptr, collectMonitor, reinterpret_cast<LPARAM>(&context));
-    EnumWindows(Impl::collectWindow, reinterpret_cast<LPARAM>(m_impl.get()));
+    EnumWindows(collectWindow, reinterpret_cast<LPARAM>(this));
 }
 
-QList<SmartRegionCandidate> WindowsSmartRegionDetector::candidatesAt(
-  const QPoint& globalPosition)
+void WindowsSmartRegionDetector::addWindow(HWND window)
 {
-    const ScreenMapping* mapping =
-      SmartRegionGeometry::screenAt(globalPosition, m_impl->screenMappings);
-    if (!mapping) {
+    if (!IsWindowVisible(window) || IsIconic(window) ||
+        GetAncestor(window, GA_ROOT) != window ||
+        window == GetDesktopWindow() || window == GetShellWindow()) {
+        return;
+    }
+
+    DWORD processId = 0;
+    GetWindowThreadProcessId(window, &processId);
+    if (processId == 0 || processId == GetCurrentProcessId()) {
+        return;
+    }
+
+    // Cloaked windows are hidden by DWM, e.g. on another virtual desktop.
+    DWORD cloaked = 0;
+    if (SUCCEEDED(DwmGetWindowAttribute(
+          window, DWMWA_CLOAKED, &cloaked, sizeof(cloaked))) &&
+        cloaked != 0) {
+        return;
+    }
+
+    const LONG_PTR extendedStyle = GetWindowLongPtrW(window, GWL_EXSTYLE);
+    if ((extendedStyle & WS_EX_LAYERED) != 0) {
+        // Layered windows that are click-through or fully transparent are
+        // overlays the user cannot see or interact with.
+        if ((extendedStyle & WS_EX_TRANSPARENT) != 0) {
+            return;
+        }
+        BYTE alpha = 255;
+        DWORD flags = 0;
+        if (GetLayeredWindowAttributes(window, nullptr, &alpha, &flags) &&
+            (flags & LWA_ALPHA) != 0 && alpha == 0) {
+            return;
+        }
+    }
+
+    // The extended frame bounds exclude the invisible resize borders that
+    // GetWindowRect includes on Windows 10 and later.
+    RECT nativeRect{};
+    if (FAILED(DwmGetWindowAttribute(window,
+                                     DWMWA_EXTENDED_FRAME_BOUNDS,
+                                     &nativeRect,
+                                     sizeof(nativeRect))) &&
+        !GetWindowRect(window, &nativeRect)) {
+        return;
+    }
+    if (!validNativeRect(nativeRect) ||
+        nativeRect.right - nativeRect.left < MIN_WINDOW_SIDE ||
+        nativeRect.bottom - nativeRect.top < MIN_WINDOW_SIDE) {
+        return;
+    }
+    m_windows.append({ window, rectFromNative(nativeRect) });
+}
+
+QList<QRect> WindowsSmartRegionDetector::regionsAt(const QPoint& globalPosition)
+{
+    // Map through the pointer's screen only: with mixed DPI, parts of a
+    // window on other screens would map to a different logical scale.
+    const ScreenMapping* screen =
+      SmartRegionGeometry::screenAt(globalPosition, m_screens);
+    if (!screen) {
         return {};
     }
     const QPoint nativePoint =
-      SmartRegionGeometry::toNativePoint(globalPosition, *mapping);
-    const Impl::Window* window = m_impl->windowAt(nativePoint);
-    if (!window) {
+      SmartRegionGeometry::toNativePoint(globalPosition, *screen);
+    const auto window = std::find_if(
+      m_windows.cbegin(), m_windows.cend(), [&](const Window& candidate) {
+          return candidate.nativeGeometry.contains(nativePoint);
+      });
+    if (window == m_windows.cend()) {
         return {};
     }
 
+    QList<QRect> elements;
     const POINT nativePosition{ nativePoint.x(), nativePoint.y() };
-    const QList<QRect> nativeElements =
-      m_impl->automation.elementChainAt(window->handle, nativePosition);
-    QList<QRect> logicalElements;
-    logicalElements.reserve(nativeElements.size());
-    for (const QRect& nativeElement : nativeElements) {
-        logicalElements.append(toLogicalRect(nativeElement, *mapping));
+    for (const QRect& element :
+         m_automation.elementChainAt(window->handle, nativePosition)) {
+        elements.append(toLogicalRect(element, *screen));
     }
-
-    return makeSmartRegionCandidateChain(
-      logicalElements,
-      toLogicalRect(window->nativeGeometry, *mapping),
-      globalPosition);
+    return buildRegionChain(
+      elements, toLogicalRect(window->nativeGeometry, *screen), globalPosition);
 }
+} // namespace
 
-bool WindowsSmartRegionDetector::accessibilityAvailable() const
+bool nativeSmartRegionDetectorSupported()
 {
-    return m_impl->automation.available();
+    return true;
 }
 
-void WindowsSmartRegionDetector::requestAccessibilityPermission() {}
+std::unique_ptr<SmartRegionDetector> createNativeSmartRegionDetector()
+{
+    return std::make_unique<WindowsSmartRegionDetector>();
+}

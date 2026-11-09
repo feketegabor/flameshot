@@ -3,8 +3,7 @@
 ### To be Reviewed By
 
 * Flameshot maintainers
-* macOS and Windows maintainers and users
-* Contributors interested in a Linux backend
+* macOS, Windows and Linux (X11) maintainers and users
 
 ### Authors
 
@@ -89,53 +88,74 @@ The Windows backend follows the same contract:
 5. Native screen coordinates are mapped to Qt logical coordinates per monitor,
    including mixed-scale displays.
 
+The X11 backend follows the same contract:
+
+1. `_NET_CLIENT_LIST_STACKING` on the root window lists the managed windows in
+   stacking order. Unmapped, minimized (`_NET_WM_STATE_HIDDEN`) and desktop
+   windows are skipped. `_NET_FRAME_EXTENTS` adds window manager decorations,
+   and `_GTK_FRAME_EXTENTS` removes the invisible shadows of client-side
+   decorations. All requests are pipelined in a single round trip.
+2. `_NET_WM_PID` identifies the owning process, which is matched to the
+   application registered on the AT-SPI accessibility bus.
+3. AT-SPI `Component.GetAccessibleAtPoint` descends from the application's
+   top-level element that matches the window to the deepest element under the
+   pointer; `Component.GetExtents` provides each element's geometry.
+4. D-Bus calls share the same per-lookup budget and per-call timeout as macOS.
+   Without an accessibility bus, the backend detects whole windows only.
+5. The backend is only enabled when Qt uses the `xcb` platform in an X11
+   session. It is built when the `xcb` development files are available.
+
 The detector is behind a platform-neutral interface. Every backend returns the
-same leaf-to-window candidate chain in global logical coordinates; the capture
-widget owns preview, navigation, and selection behavior. Supported backends fall
-back to window geometry when Accessibility or UI Automation is unavailable.
-Unsupported platforms use a no-op detector and retain manual selection without
-installing smart-region event handling.
+same leaf-to-window region chain in global logical coordinates. A small
+controller owns the highlighted region, wheel navigation and lookup rate
+limiting; the capture widget only forwards pointer and wheel input and paints
+the controller's current region. Supported backends fall back to window
+geometry when Accessibility, UI Automation or AT-SPI is unavailable.
+Unsupported platforms and sessions do not show the setting and keep manual
+selection only.
 
-The current fork implementation and proposed platform rollout are:
+The highlighted region is exactly what a click selects. Some applications
+(Chromium, Electron, WebKit) build their accessibility tree lazily, so the
+first lookup can only return a coarse container. Instead of silently replacing
+the highlighted region when the pointer is pressed, the controller repeats the
+lookup a few times while the pointer rests and updates the highlight, so it
+settles on the deepest element before the user clicks. Lookups for an
+unchanged pointer position are ignored. On macOS, Electron applications are
+asked to expose their accessibility tree with the documented
+`AXManualAccessibility` attribute.
 
-* macOS, implemented: Window Server geometry plus Accessibility hit-testing,
-  as described above;
-* Windows, implemented: top-level window enumeration plus UI Automation
-  hit-testing and parent traversal;
-* X11, planned: EWMH stacking and window geometry, with AT-SPI providing an
-  optional child-element hierarchy. No Linux backend is implemented yet;
-* Wayland, unsupported: a future compositor-specific backend requires APIs that
-  provide the same contract. The current screenshot portals do not provide
-  arbitrary foreign window and control geometry, so the no-op detector retains
-  the manual workflow.
+The platform support is:
 
-This fork implements the shared contract on macOS and Windows. This draft RFC
-proposes that contract and staged native backends for upstream review; it does
-not imply upstream acceptance or Linux support.
+* macOS: Window Server geometry plus Accessibility hit-testing;
+* Windows: top-level window enumeration plus UI Automation hit-testing and
+  parent traversal;
+* X11: EWMH window stacking and geometry plus AT-SPI hit-testing;
+* Wayland: unsupported. The screenshot portals do not expose foreign window or
+  control geometry, so the setting is hidden and manual selection is unchanged.
 
 ### Configuration and permissions
 
-On macOS and Windows, a General setting named **Enable smart region selection**
-controls the feature and is disabled by default. Enabling it is an explicit
+On supported platforms, a General setting named **Enable smart region
+selection** controls the feature and is disabled by default. Enabling it is an explicit
 choice because preselection clicks and scrolling gain new behavior. On macOS,
 window snapping works without Accessibility permission, while selecting
 controls inside another application requires the standard macOS Accessibility
 permission. General settings provides an explicit **Grant Accessibility
-Access...** button on macOS only. Windows UI Automation does not require that
-permission UI.
+Access...** button on macOS only. Windows UI Automation and AT-SPI do not
+require a permission prompt.
 
 ## Performance Impact
 
 Window enumeration occurs once per capture. Pointer hit-testing is throttled to
-at most once every 35 milliseconds. Accessibility messaging and UI Automation
-connection/transaction calls use 80-millisecond limits within a 200-millisecond
+at most once every 35 milliseconds, and up to three follow-up lookups run while
+the pointer rests (after 150, 400 and 1000 milliseconds). Accessibility, AT-SPI
+and UI Automation calls use 80-millisecond limits within a 200-millisecond
 request budget. Windows waits up to 250 milliseconds for a worker result on the
-GUI thread; macOS performs its budgeted lookup on the GUI thread. These are
-best-effort limits, not process isolation or a guarantee against arbitrary
-provider stalls or COM teardown delays. Painting uses only the current candidate
-rectangle.
+GUI thread; macOS and X11 perform their budgeted lookup on the GUI thread. These
+are best-effort limits, not process isolation or a guarantee against arbitrary
+provider stalls or COM teardown delays. Painting uses only the current region.
 
-The candidate hierarchy is recalculated when the pointer moves. Scrolling only
+The region hierarchy is recalculated when the pointer moves. Scrolling only
 changes an index in the already collected chain.
 
 ## Backwards Compatibility and Upgrade Path
@@ -143,13 +163,10 @@ changes an index in the already collected chain.
 Existing config files remain valid; the new Boolean setting defaults to false.
 The manual drag gesture, committed selection, annotation tools, copy/save
 actions, and existing command-line options remain available. Smart-region click
-and wheel behavior applies only when enabled on a supported platform. Companion
-macOS fixes restore the previous application's focus when appropriate after
-capture and keep capture controls clear of the Dock and menu bar independently
-of this setting.
+and wheel behavior applies only when enabled on a supported platform.
 
-The initial implementation supports macOS and Windows. Other platforms compile
-a no-op detector until they gain a backend.
+Platforms without a backend compile no detector code and do not show the
+setting.
 
 ## Prior Art and Alternatives
 
@@ -203,6 +220,12 @@ child elements, or the common case where the intended window is not focused.
 * Windows App and RDP content, which may expose only a coarse remote surface.
 * Single Retina display, multiple equal-scale displays, mixed scaling, and a
   partially off-screen window.
+* X11 with a reparenting window manager, a client-side decorated (GTK) window,
+  a Qt application, and a session without the AT-SPI bus. Wayland sessions do
+  not show the setting.
+* Hovering a Chromium or Electron window right after starting a capture: the
+  highlight settles on the deepest element, and clicking without moving the
+  pointer selects the highlighted region.
 * Accessibility target that is slow, closes during hit-testing, or refuses the
   requested attributes.
 * Feature disabled and unsupported-platform builds.

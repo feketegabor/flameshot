@@ -19,9 +19,7 @@
 #include "widgets/capture/capturetoolobjects.h"
 #include "widgets/capture/magnifierwidget.h"
 #include "widgets/capture/selectionwidget.h"
-#include "widgets/capture/smartregiondetector.h"
 
-#include <QElapsedTimer>
 #include <QMessageBox>
 #include <QPointer>
 #include <QTimer>
@@ -38,6 +36,7 @@ class QNetworkAccessManager;
 class QNetworkReply;
 class ColorPicker;
 class NotifierBox;
+class SmartRegionController;
 class HoverEventFilter;
 #if !defined(DISABLE_UPDATE_CHECKER)
 class UpdateNotificationWidget;
@@ -125,7 +124,7 @@ private:
     void initContext(bool fullscreen, const CaptureRequest& req);
     void initPanel();
     void initSelection();
-    void initSmartRegionDetection();
+    void initSmartRegion();
     void initShortcuts();
     void initButtons();
     void initHelpMessage();
@@ -151,7 +150,7 @@ private:
     QRect paddedUpdateRect(const QRect& r) const;
     void drawErrorMessage(const QString& msg, QPainter* painter);
     void drawInactiveRegion(QPainter* painter);
-    void drawSmartRegionCandidate(QPainter* painter);
+    void drawSmartRegion(QPainter* painter);
     void drawToolsData(bool drawSelection = true);
     void drawObjectSelection();
 
@@ -162,13 +161,9 @@ private:
 
     QPoint snapToGrid(const QPoint& point) const;
 
-    void scheduleSmartRegionUpdate(const QPoint& position,
-                                   bool immediate = false);
-    void updateSmartRegionCandidate();
-    void clearSmartRegionCandidate();
-    bool navigateSmartRegion(int direction);
-    QRect currentSmartRegionGeometry() const;
-    const SmartRegionCandidate* currentSmartRegionCandidate() const;
+    bool smartRegionActive() const;
+    QRect smartRegionInWidget() const;
+    QRect globalToWidget(const QRect& globalRect) const;
 
     ////////////////////////////////////////
     // Class members
@@ -200,14 +195,8 @@ private:
     UpdateNotificationWidget* m_updateNotificationWidget;
 #endif
     quint64 m_lastMouseWheel;
-    quint64 m_lastSmartRegionWheel{ 0 };
-    std::unique_ptr<SmartRegionDetector> m_smartRegionDetector;
-    QList<SmartRegionCandidate> m_smartRegionCandidates;
-    int m_smartRegionIndex{ -1 };
-    QRect m_preferredSmartRegionGeometry;
-    QPoint m_pendingSmartRegionPosition;
-    QTimer m_smartRegionUpdateTimer;
-    QElapsedTimer m_smartRegionUpdateElapsed;
+    // Null unless smart region selection is enabled and supported.
+    SmartRegionController* m_smartRegion = nullptr;
     QPointer<CaptureToolButton> m_sizeIndButton;
     // Last pressed button
     QPointer<CaptureToolButton> m_activeButton;

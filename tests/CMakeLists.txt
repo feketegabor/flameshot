@@ -1,64 +1,36 @@
 find_package(Qt${QT_VERSION_MAJOR} CONFIG REQUIRED Core Gui Widgets Test)
 
-add_executable(
-  flameshot-smart-region-tests
-  smartregiontest.cpp
-  ${CMAKE_SOURCE_DIR}/src/widgets/capture/smartregiondetector.cpp)
+set(CAPTURE_DIR ${CMAKE_SOURCE_DIR}/src/widgets/capture)
 
-target_include_directories(
-  flameshot-smart-region-tests
-  PRIVATE ${CMAKE_SOURCE_DIR}/src)
-
-target_link_libraries(
-  flameshot-smart-region-tests
-  PRIVATE project_options
-          Qt${QT_VERSION_MAJOR}::Core
-          Qt${QT_VERSION_MAJOR}::Gui
-          Qt${QT_VERSION_MAJOR}::Test)
-
-set_target_properties(flameshot-smart-region-tests PROPERTIES AUTOMOC ON)
-
-if(APPLE)
-  find_library(APPLICATION_SERVICES_FRAMEWORK ApplicationServices REQUIRED)
-  find_library(CORE_GRAPHICS_FRAMEWORK CoreGraphics REQUIRED)
-  target_sources(
-    flameshot-smart-region-tests
-    PRIVATE ${CMAKE_SOURCE_DIR}/src/widgets/capture/macossmartregiondetector.cpp)
+function(flameshot_add_test name)
+  cmake_parse_arguments(TEST "" "" "SOURCES;LIBRARIES" ${ARGN})
+  add_executable(flameshot-${name}-tests ${TEST_SOURCES})
+  target_include_directories(flameshot-${name}-tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
   target_link_libraries(
-    flameshot-smart-region-tests
-    PRIVATE ${APPLICATION_SERVICES_FRAMEWORK} ${CORE_GRAPHICS_FRAMEWORK})
-elseif(WIN32)
-  target_sources(
-    flameshot-smart-region-tests
-    PRIVATE ${CMAKE_SOURCE_DIR}/src/widgets/capture/windowssmartregiondetector.cpp)
-  target_link_libraries(
-    flameshot-smart-region-tests
-    PRIVATE dwmapi ole32 uiautomationcore)
-endif()
+    flameshot-${name}-tests
+    PRIVATE project_options Qt${QT_VERSION_MAJOR}::Test ${TEST_LIBRARIES})
+  set_target_properties(flameshot-${name}-tests PROPERTIES AUTOMOC ON)
+  add_test(NAME ${name} COMMAND flameshot-${name}-tests)
+  set_tests_properties(${name} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+endfunction()
 
-add_test(NAME smart-region COMMAND flameshot-smart-region-tests)
+flameshot_add_test(
+  smart-region
+  SOURCES smartregiontest.cpp
+          ${CAPTURE_DIR}/smartregioncontroller.cpp
+          ${CAPTURE_DIR}/smartregiondetector.cpp
+  LIBRARIES Qt${QT_VERSION_MAJOR}::Core)
 
-add_executable(
-  flameshot-selection-widget-tests
-  selectionwidgettest.cpp
-  ${CMAKE_SOURCE_DIR}/src/widgets/capture/selectionwidget.cpp
-  ${CMAKE_SOURCE_DIR}/src/utils/globalvalues.cpp)
-target_include_directories(
-  flameshot-selection-widget-tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
+flameshot_add_test(
+  smart-region-geometry
+  SOURCES smartregiongeometrytest.cpp
+  LIBRARIES Qt${QT_VERSION_MAJOR}::Core)
+
+flameshot_add_test(
+  selection-widget
+  SOURCES selectionwidgettest.cpp
+          ${CAPTURE_DIR}/selectionwidget.cpp
+          ${CMAKE_SOURCE_DIR}/src/utils/globalvalues.cpp
+  LIBRARIES Qt${QT_VERSION_MAJOR}::Widgets)
 target_compile_definitions(
   flameshot-selection-widget-tests PRIVATE APP_VERSION="test" FLAMESHOT_GIT_HASH="test")
-target_link_libraries(
-  flameshot-selection-widget-tests
-  PRIVATE project_options Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Test)
-set_target_properties(flameshot-selection-widget-tests PROPERTIES AUTOMOC ON)
-add_test(NAME selection-widget COMMAND flameshot-selection-widget-tests)
-set_tests_properties(selection-widget PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
-
-add_executable(flameshot-smart-region-geometry-tests smartregiongeometrytest.cpp)
-target_include_directories(
-  flameshot-smart-region-geometry-tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
-target_link_libraries(
-  flameshot-smart-region-geometry-tests
-  PRIVATE project_options Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::Test)
-set_target_properties(flameshot-smart-region-geometry-tests PROPERTIES AUTOMOC ON)
-add_test(NAME smart-region-geometry COMMAND flameshot-smart-region-geometry-tests)

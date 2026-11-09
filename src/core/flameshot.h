@@ -100,6 +100,8 @@ public:
 
 private:
     void onWindowVisibilityChanged(QWindow::Visibility newVisibility);
+    // Returns focus to the application that was active before the capture.
+    void restoreFocusAfterCapture();
     int m_dockIconVisibleCount = 0;
     std::function<void()> m_restoreCaptureFocus;
 #endif

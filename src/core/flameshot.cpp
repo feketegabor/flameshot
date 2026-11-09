@@ -12,6 +12,7 @@
 #include <QWindow>
 #include <memory>
 #include <objc/message.h>
+#include <utility>
 
 namespace {
 
@@ -39,79 +40,76 @@ void setActivationPolicyAccessory()
 
 constexpr const char* visibleInDockProperty = "_visibleInDock";
 
-id cocoaObject(id object, const char* selector)
+// Calls an Objective-C method with the given return and argument types.
+template<typename Result = id, typename... Args>
+Result send(id object, const char* selector, Args... args)
 {
-    return reinterpret_cast<id (*)(id, SEL)>(objc_msgSend)(
-      object, sel_registerName(selector));
+    return reinterpret_cast<Result (*)(id, SEL, Args...)>(objc_msgSend)(
+      object, sel_registerName(selector), args...);
 }
 
-bool sameApplication(id first, id second)
+id objcClass(const char* name)
 {
-    return first && second &&
-           reinterpret_cast<BOOL (*)(id, SEL, id)>(objc_msgSend)(
-             first, sel_registerName("isEqual:"), second);
+    return reinterpret_cast<id>(objc_getClass(name));
+}
+
+id currentApplication()
+{
+    return send(objcClass("NSRunningApplication"), "currentApplication");
 }
 
 id frontmostApplication()
 {
-    return cocoaObject(
-      cocoaObject(reinterpret_cast<id>(objc_getClass("NSWorkspace")),
-                  "sharedWorkspace"),
-      "frontmostApplication");
+    return send(send(objcClass("NSWorkspace"), "sharedWorkspace"),
+                "frontmostApplication");
 }
 
-using CaptureApplication = std::shared_ptr<objc_object>;
+bool isSameApplication(id first, id second)
+{
+    return first && second && send<BOOL>(first, "isEqual:", second);
+}
 
-CaptureApplication captureApplication()
+using RunningApplication = std::shared_ptr<objc_object>;
+
+// The application that is active before the capture overlay appears, or null
+// when it is Flameshot itself.
+RunningApplication applicationBeforeCapture()
 {
     id application = frontmostApplication();
-    id current =
-      cocoaObject(reinterpret_cast<id>(objc_getClass("NSRunningApplication")),
-                  "currentApplication");
-    if (!application || sameApplication(application, current)) {
+    if (!application || isSameApplication(application, currentApplication())) {
         return {};
     }
-    return CaptureApplication(cocoaObject(application, "retain"), [](id app) {
-        reinterpret_cast<void (*)(id, SEL)>(objc_msgSend)(
-          app, sel_registerName("release"));
-    });
+    return RunningApplication(send(application, "retain"),
+                              [](id app) { send<void>(app, "release"); });
 }
 
-void restoreCaptureApplication(const CaptureApplication& application)
+// Hands focus back to the application that was active before the capture.
+void reactivate(const RunningApplication& application)
 {
-    id current =
-      cocoaObject(reinterpret_cast<id>(objc_getClass("NSRunningApplication")),
-                  "currentApplication");
-    if (!application || !sameApplication(frontmostApplication(), current)) {
+    id current = currentApplication();
+    // Leave focus alone if the user already switched to another application,
+    // or a Flameshot window (save dialog, pin, launcher) is still open.
+    if (!isSameApplication(frontmostApplication(), current)) {
         return;
     }
-    // Do not take focus from a save dialog, pin or another Flameshot window.
     if (QWidget* active = QApplication::activeWindow();
         active && active->isVisible()) {
         return;
     }
-    if (reinterpret_cast<BOOL (*)(id, SEL)>(objc_msgSend)(
-          application.get(), sel_registerName("isTerminated"))) {
+    if (send<BOOL>(application.get(), "isTerminated")) {
         return;
     }
 
-    id nsApp = cocoaObject(reinterpret_cast<id>(objc_getClass("NSApplication")),
-                           "sharedApplication");
-    const SEL yield = sel_registerName("yieldActivationToApplication:");
-    if (reinterpret_cast<BOOL (*)(id, SEL, SEL)>(objc_msgSend)(
-          nsApp, sel_registerName("respondsToSelector:"), yield)) {
-        // macOS 14+: transfer activation cooperatively without forcing it
-        // away from a different app chosen by the user.
-        reinterpret_cast<void (*)(id, SEL, id)>(objc_msgSend)(
-          nsApp, yield, application.get());
-        reinterpret_cast<BOOL (*)(id, SEL, id, unsigned long)>(objc_msgSend)(
-          application.get(),
-          sel_registerName("activateFromApplication:options:"),
-          current,
-          0);
+    id nsApp = send(objcClass("NSApplication"), "sharedApplication");
+    if (send<BOOL>(nsApp,
+                   "respondsToSelector:",
+                   sel_registerName("yieldActivationToApplication:"))) {
+        // macOS 14 and later only allow cooperative activation.
+        send<void>(nsApp, "yieldActivationToApplication:", application.get());
+        send<BOOL>(
+          application.get(), "activateFromApplication:options:", current, 0UL);
     } else {
-        reinterpret_cast<BOOL (*)(id, SEL, unsigned long)>(objc_msgSend)(
-          application.get(), sel_registerName("activateWithOptions:"), 0);
+        send<BOOL>(application.get(), "activateWithOptions:", 0UL);
     }
 }
 
@@ -185,13 +183,11 @@ Flameshot::Flameshot()
     qApp->setStyleSheet(StyleSheet);
 
 #if defined(Q_OS_MACOS)
-    connect(qApp, &QCoreApplication::aboutToQuit, this, [this]() {
-        // CLI captures can exit their event loop before the deferred restore.
-        if (!m_captureWindow && m_restoreCaptureFocus) {
-            const auto restore = std::move(m_restoreCaptureFocus);
-            restore();
-        }
-    });
+    // CLI captures can quit before the deferred focus restore runs.
+    connect(qApp,
+            &QCoreApplication::aboutToQuit,
+            this,
+            &Flameshot::restoreFocusAfterCapture);
     // Request Screen Recording permission via the proper CoreGraphics API
     if (!CGPreflightScreenCaptureAccess()) {
         CGRequestScreenCaptureAccess();
@@ -215,6 +211,15 @@ Flameshot::Flameshot()
                      [this]() { history(); });
 #endif
 }
+
+#if defined(Q_OS_MACOS)
+void Flameshot::restoreFocusAfterCapture()
+{
+    if (!m_captureWindow && m_restoreCaptureFocus) {
+        std::exchange(m_restoreCaptureFocus, {})();
+    }
+}
+#endif
 
 Flameshot* Flameshot::instance()
 {
@@ -255,10 +260,8 @@ CaptureWidget* Flameshot::gui(const CaptureRequest& req)
     }
 
 #if defined(Q_OS_MACOS)
-    if (const CaptureApplication previousApplication = captureApplication()) {
-        m_restoreCaptureFocus = [previousApplication]() {
-            restoreCaptureApplication(previousApplication);
-        };
+    if (RunningApplication previous = applicationBeforeCapture()) {
+        m_restoreCaptureFocus = [previous]() { reactivate(previous); };
     }
     // This is required on MacOS because of Mission Control. If you'll switch to
     // another Desktop you cannot take a new screenshot from the tray, you have
@@ -295,14 +298,8 @@ CaptureWidget* Flameshot::gui(const CaptureRequest& req)
 
 #if defined(Q_OS_MACOS)
         connect(m_captureWindow, &QObject::destroyed, this, [this]() {
-            // Let the overlay disappear and export callbacks finish
-            // first.
-            QTimer::singleShot(0, this, [this]() {
-                if (!m_captureWindow && m_restoreCaptureFocus) {
-                    const auto restore = std::move(m_restoreCaptureFocus);
-                    restore();
-                }
-            });
+            // Let the overlay disappear and export callbacks finish first.
+            QTimer::singleShot(0, this, &Flameshot::restoreFocusAfterCapture);
         });
 #endif
 

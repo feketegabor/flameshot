@@ -32,6 +32,8 @@ public:
 
     void setIgnoreMouse(bool ignore);
     void setIdleCentralCursor(const QCursor& cursor);
+    // A region that a click (rather than a drag) selects while no selection
+    // is visible. Pass a null rect to disable click selection.
     void setClickSelectionCandidate(const QRect& geometry);
 
     void setGeometryAnimated(const QRect& r);
@@ -95,7 +97,6 @@ private:
     SideType m_activeSide;
     QCursor m_idleCentralCursor;
     bool m_ignoreMouse;
-    bool m_clickSelectionPending;
     bool m_mouseStartMove;
     float m_aspectRatio;
 

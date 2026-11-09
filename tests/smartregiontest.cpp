@@ -1,24 +1,72 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Flameshot Contributors
 
-#include "widgets/capture/smartregiondetector.h"
-#include "widgets/capture/smartregioninteraction.h"
+#include "widgets/capture/smartregioncontroller.h"
 
+#include <QSignalSpy>
 #include <QTest>
+
+namespace {
+const QRect WINDOW(0, 0, 800, 600);
+const QRect PANEL(50, 50, 400, 300);
+const QRect BUTTON(70, 70, 100, 80);
+const QRect OTHER_BUTTON(200, 70, 100, 80);
+
+// Returns queued answers, repeating the last one, and counts lookups.
+class FakeDetector : public SmartRegionDetector
+{
+public:
+    explicit FakeDetector(QList<QList<QRect>> answers)
+      : m_answers(std::move(answers))
+    {}
+
+    void snapshotWindows() override {}
+
+    QList<QRect> regionsAt(const QPoint&) override
+    {
+        ++*m_lookups;
+        return m_answers.size() > 1 ? m_answers.takeFirst()
+                                    : m_answers.constFirst();
+    }
+
+    std::shared_ptr<int> lookups() const { return m_lookups; }
+
+private:
+    QList<QList<QRect>> m_answers;
+    std::shared_ptr<int> m_lookups = std::make_shared<int>(0);
+};
+
+struct Fixture
+{
+    explicit Fixture(QList<QList<QRect>> answers)
+    {
+        auto detector = std::make_unique<FakeDetector>(std::move(answers));
+        lookups = detector->lookups();
+        controller =
+          std::make_unique<SmartRegionController>(std::move(detector));
+    }
+
+    std::unique_ptr<SmartRegionController> controller;
+    std::shared_ptr<int> lookups;
+};
+}
 
 class SmartRegionTest : public QObject
 {
     Q_OBJECT
 
 private slots:
-    void candidateChainRunsFromLeafToWindow();
-    void clickAndDragUseDifferentPaths();
-    void physicalWheelDirectionIsStable();
-    void preselectionConsumesWheelBeforeToolSizing();
-    void chosenParentSurvivesLeafAndDepthChanges();
+    void chainRunsFromDeepestElementToWindow();
+    void chainOutsideWindowIsEmpty();
+    void repeatedPositionDoesNotReplaceHighlight();
+    void restingPointerRefinesLazyHierarchy();
+    void wheelWalksTowardParentAndBack();
+    void chosenParentSurvivesMovementInside();
+    void continuousScrollingIsRateLimited();
+    void clearForgetsRegions();
 };
 
-void SmartRegionTest::candidateChainRunsFromLeafToWindow()
+void SmartRegionTest::chainRunsFromDeepestElementToWindow()
 {
     const QRect window(10, 20, 400, 300);
     const QPoint pointer(80, 90);
@@ -26,82 +74,104 @@ void SmartRegionTest::candidateChainRunsFromLeafToWindow()
     const QRect parent(50, 60, 180, 120);
     const QList<QRect> elements{
         leaf,
-        leaf,
-        QRect(0, 0, 2, 2),
-        QRect(500, 500, 40, 40),
+        leaf,                    // duplicate
+        QRect(78, 88, 2, 2),     // too small
+        QRect(500, 500, 40, 40), // not under the pointer
         parent,
-        QRect(0, 0, 600, 500),
+        QRect(0, 0, 600, 500), // clipped to the window
     };
 
-    const QList<SmartRegionCandidate> chain =
-      makeSmartRegionCandidateChain(elements, window, pointer);
-
-    QCOMPARE(chain.size(), 3);
-    QCOMPARE(chain.at(0).geometry, leaf);
-    QCOMPARE(chain.at(1).geometry, parent);
-    QCOMPARE(chain.at(2).geometry, window);
+    QCOMPARE(buildRegionChain(elements, window, pointer),
+             QList<QRect>({ leaf, parent, window }));
 }
 
-void SmartRegionTest::clickAndDragUseDifferentPaths()
+void SmartRegionTest::chainOutsideWindowIsEmpty()
 {
-    const QPoint press(100, 100);
-    QVERIFY(!SmartRegionInteraction::startsManualDrag(press, QPoint(102, 101)));
-    QVERIFY(SmartRegionInteraction::startsManualDrag(press, QPoint(104, 100)));
+    QVERIFY(buildRegionChain({ BUTTON }, WINDOW, QPoint(900, 10)).isEmpty());
 }
 
-void SmartRegionTest::physicalWheelDirectionIsStable()
+void SmartRegionTest::repeatedPositionDoesNotReplaceHighlight()
 {
-    const auto traditionalUp =
-      SmartRegionInteraction::wheelDecision(false, true, 120, false);
-    const auto traditionalDown =
-      SmartRegionInteraction::wheelDecision(false, true, -120, false);
-    const auto invertedUp =
-      SmartRegionInteraction::wheelDecision(false, true, -120, true);
-    const auto invertedDown =
-      SmartRegionInteraction::wheelDecision(false, true, 120, true);
+    // The first lookup sees a coarse tree, later ones the deepest element.
+    Fixture f({ { PANEL, WINDOW }, { BUTTON, PANEL, WINDOW } });
+    f.controller->pointerMoved(QPoint(100, 100));
+    QCOMPARE(f.controller->current(), PANEL);
 
-    QCOMPARE(traditionalUp.direction, 1);
-    QCOMPARE(traditionalDown.direction, -1);
-    QCOMPARE(invertedUp.direction, 1);
-    QCOMPARE(invertedDown.direction, -1);
+    // Qt sends a synthetic move at the same position right before a press.
+    // It must not swap the highlighted region for one never shown.
+    f.controller->pointerMoved(QPoint(100, 100));
+    QCOMPARE(f.controller->current(), PANEL);
+    QCOMPARE(*f.lookups, 1);
 }
 
-void SmartRegionTest::preselectionConsumesWheelBeforeToolSizing()
+void SmartRegionTest::restingPointerRefinesLazyHierarchy()
 {
-    const auto pendingCandidate =
-      SmartRegionInteraction::wheelDecision(false, true, 0, false);
-    const auto selected =
-      SmartRegionInteraction::wheelDecision(true, true, 120, false);
-    const auto disabled =
-      SmartRegionInteraction::wheelDecision(false, false, 120, false);
+    Fixture f({ { PANEL, WINDOW }, { BUTTON, PANEL, WINDOW } });
+    QSignalSpy changed(f.controller.get(),
+                       &SmartRegionController::currentChanged);
+    f.controller->pointerMoved(QPoint(100, 100));
+    QCOMPARE(f.controller->current(), PANEL);
 
-    QVERIFY(pendingCandidate.consumed);
-    QCOMPARE(pendingCandidate.direction, 0);
-    QVERIFY(!selected.consumed);
-    QVERIFY(!disabled.consumed);
+    // The highlight settles on the deepest element without any input, so
+    // what is shown before the click is what the click selects.
+    QTRY_COMPARE(f.controller->current(), BUTTON);
+    QCOMPARE(changed.size(), 2);
+    QCOMPARE(changed.last().at(0).toRect(), PANEL);
+    QCOMPARE(changed.last().at(1).toRect(), BUTTON);
 }
 
-void SmartRegionTest::chosenParentSurvivesLeafAndDepthChanges()
+void SmartRegionTest::wheelWalksTowardParentAndBack()
 {
-    const QRect window(0, 0, 800, 600);
-    const QRect parent(50, 50, 400, 300);
-    const QRect child(70, 70, 100, 80);
-    const QRect sibling(200, 70, 100, 80);
-    const QRect intermediate(60, 60, 300, 150);
-    const auto chain = makeSmartRegionCandidateChain(
-      { sibling, intermediate, parent }, window, QPoint(220, 90));
+    Fixture f({ { BUTTON, PANEL, WINDOW } });
+    f.controller->pointerMoved(QPoint(100, 100));
+    f.controller->step(1, false);
+    QCOMPARE(f.controller->current(), PANEL);
+    f.controller->step(1, false);
+    QCOMPARE(f.controller->current(), WINDOW);
+    f.controller->step(1, false);
+    QCOMPARE(f.controller->current(), WINDOW);
+    f.controller->step(-1, false);
+    f.controller->step(-1, false);
+    f.controller->step(-1, false);
+    QCOMPARE(f.controller->current(), BUTTON);
+}
 
-    const int retained =
-      SmartRegionInteraction::preferredCandidateIndex(chain, parent);
-    QCOMPARE(retained, 2);
-    QCOMPARE(chain.at(retained).geometry, parent);
-    QCOMPARE(SmartRegionInteraction::preferredCandidateIndex(chain, window), 3);
+void SmartRegionTest::chosenParentSurvivesMovementInside()
+{
+    Fixture f({ { BUTTON, PANEL, WINDOW }, { OTHER_BUTTON, PANEL, WINDOW } });
+    f.controller->pointerMoved(QPoint(100, 100));
+    f.controller->step(1, false);
+    QCOMPARE(f.controller->current(), PANEL);
 
-    // Leaving a chosen region or switching back to the leaf restores normal
-    // hover tracking; a former leaf must not become a sticky parent.
-    QCOMPARE(SmartRegionInteraction::preferredCandidateIndex(chain, child), 0);
-    QCOMPARE(SmartRegionInteraction::preferredCandidateIndex(chain, {}), 0);
-    QCOMPARE(SmartRegionInteraction::preferredCandidateIndex({}, parent), -1);
+    // Moving onto a sibling keeps the chosen parent.
+    f.controller->pointerMoved(QPoint(220, 90));
+    QTRY_COMPARE(f.controller->current(), PANEL);
+}
+
+void SmartRegionTest::continuousScrollingIsRateLimited()
+{
+    Fixture f({ { BUTTON, PANEL, WINDOW } });
+    f.controller->pointerMoved(QPoint(100, 100));
+    f.controller->step(5, true);
+    f.controller->step(5, true);
+    QCOMPARE(f.controller->current(), PANEL);
+    QTest::qWait(200);
+    f.controller->step(5, true);
+    QCOMPARE(f.controller->current(), WINDOW);
+}
+
+void SmartRegionTest::clearForgetsRegions()
+{
+    Fixture f({ { BUTTON, PANEL, WINDOW } });
+    f.controller->pointerMoved(QPoint(100, 100));
+    f.controller->step(1, false);
+    f.controller->clear();
+    QVERIFY(f.controller->current().isNull());
+
+    // After clearing, the same position is looked up again, and the earlier
+    // wheel choice is forgotten.
+    f.controller->pointerMoved(QPoint(100, 100));
+    QCOMPARE(f.controller->current(), BUTTON);
 }
 
 QTEST_GUILESS_MAIN(SmartRegionTest)

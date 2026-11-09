@@ -4,7 +4,6 @@
 #include "selectionwidget.h"
 #include "utils/globalvalues.h"
 #include "widgets/capture/capturetoolbutton.h"
-#include "widgets/capture/smartregioninteraction.h"
 
 #include <QApplication>
 #include <QEvent>
@@ -16,12 +15,17 @@
 
 #define MARGIN (m_THandle.width())
 
+namespace {
+// A press on a detected region that moves further than this becomes a manual
+// drag instead of selecting the region.
+constexpr int CLICK_DRAG_THRESHOLD = 3;
+}
+
 SelectionWidget::SelectionWidget(QColor c, QWidget* parent)
   : QWidget(parent)
   , m_color(std::move(c))
   , m_activeSide(NO_SIDE)
   , m_ignoreMouse(false)
-  , m_clickSelectionPending(false)
   , m_aspectRatio(1)
 {
     // prevents this widget from consuming CaptureToolButton mouse events
@@ -112,7 +116,6 @@ void SelectionWidget::setIgnoreMouse(bool ignore)
 {
     m_ignoreMouse = ignore;
     if (ignore) {
-        m_clickSelectionPending = false;
         m_pendingClickSelection = {};
     }
     updateCursor();
@@ -188,14 +191,12 @@ void SelectionWidget::parentMousePressEvent(QMouseEvent* e)
 
     m_dragStartPos = e->pos();
     m_activeSide = getMouseSide(e->pos());
-    if (!isVisible() && m_clickSelectionCandidate.isValid() &&
-        m_clickSelectionCandidate.contains(e->pos())) {
-        m_clickSelectionPending = true;
+    // Remember the detected region under the press. The release selects
+    // it, unless the pointer moves far enough to start a manual drag.
+    m_pendingClickSelection = {};
+    if (!isVisible() && m_clickSelectionCandidate.contains(e->pos())) {
         m_pendingClickSelection = m_clickSelectionCandidate;
         m_activeSide = NO_SIDE;
-    } else {
-        m_clickSelectionPending = false;
-        m_pendingClickSelection = {};
     }
     if ((float)geometry().height() > 0) {
         m_aspectRatio = (float)geometry().width() / (float)geometry().height();
@@ -204,12 +205,11 @@ void SelectionWidget::parentMousePressEvent(QMouseEvent* e)
 
 void SelectionWidget::parentMouseReleaseEvent(QMouseEvent* e)
 {
-    if (e->button() == Qt::LeftButton && m_clickSelectionPending) {
-        const QRect candidate = m_pendingClickSelection;
-        m_clickSelectionPending = false;
-        m_pendingClickSelection = {};
+    if (e->button() == Qt::LeftButton && m_pendingClickSelection.isValid()) {
+        const QRect region = std::exchange(m_pendingClickSelection, {});
+        // Show first: geometry changes are only reported while visible.
         show();
-        setGeometry(candidate);
+        setGeometry(region);
         m_activeSide = NO_SIDE;
         updateCursor();
         emit geometrySettled();
@@ -234,14 +234,11 @@ void SelectionWidget::parentMouseMoveEvent(QMouseEvent* e)
         return;
     }
 
-    if (m_clickSelectionPending) {
-        if (!SmartRegionInteraction::startsManualDrag(m_dragStartPos,
-                                                      e->pos())) {
+    if (m_pendingClickSelection.isValid()) {
+        if ((e->pos() - m_dragStartPos).manhattanLength() <=
+            CLICK_DRAG_THRESHOLD) {
             return;
         }
-
-        // The pointer moved far enough to make this a regular manual drag.
-        m_clickSelectionPending = false;
         m_pendingClickSelection = {};
         show();
         m_activeSide = TOPLEFT_SIDE;

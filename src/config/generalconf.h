@@ -67,12 +67,6 @@ private slots:
 #if defined(Q_OS_MACOS)
     void useNativeFullscreenChanged(bool checked);
 #endif
-#if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
-    void smartRegionDetectionChanged(bool checked);
-#endif
-#if defined(Q_OS_MACOS)
-    void requestSmartRegionAccessibility();
-#endif
 #if defined(Q_OS_UNIX) && !defined(Q_OS_MACOS)
     void useX11LegacyScreenshotChanged(bool checked);
 #endif
@@ -121,9 +115,7 @@ private:
 #if defined(Q_OS_MACOS)
     void initUseNativeFullscreen();
 #endif
-#if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
     void initSmartRegionDetection();
-#endif
 #if defined(Q_OS_UNIX) && !defined(Q_OS_MACOS)
     void initUseX11LegacyScreenshot();
 #endif
@@ -182,12 +174,9 @@ private:
 #if defined(Q_OS_MACOS)
     QCheckBox* m_useNativeFullscreen;
 #endif
-#if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
-    QCheckBox* m_smartRegionDetection;
-#endif
-#if defined(Q_OS_MACOS)
-    QPushButton* m_smartRegionAccessibilityButton;
-#endif
+    // Null when the platform has no smart region backend.
+    QCheckBox* m_smartRegionDetection = nullptr;
+    QPushButton* m_smartRegionAccessibilityButton = nullptr;
 #if defined(Q_OS_UNIX) && !defined(Q_OS_MACOS)
     QCheckBox* m_useX11LegacyScreenshot;
 #endif
