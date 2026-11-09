@@ -144,3 +144,11 @@ jobs:
           # Show what the Windows backend found in real applications.
           Get-Content tests/windows-smart-region.txt
           exit $result
+
+      - name: Upload smart region screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-smart-region-screenshots
+          path: build/tests/screenshots/
+          retention-days: 7

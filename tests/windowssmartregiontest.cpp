@@ -15,6 +15,8 @@
 #include <QElapsedTimer>
 #include <QFile>
 #include <QGuiApplication>
+#include <QPainter>
+#include <QPixmap>
 #include <QProcess>
 #include <QScopeGuard>
 #include <QScreen>
@@ -178,6 +180,43 @@ void WindowsSmartRegionTest::findsElementsInsideWindow()
     // Ask repeatedly, like the capture widget does while the pointer rests:
     // the first lookups may only find the window.
     QList<QRect> regions;
+    // Save what was found as a screenshot with the regions drawn on it, from
+    // the deepest element (red) to the window, for people to check.
+    const auto screenshot = qScopeGuard([&]() {
+        overlay.hide();
+        QTest::qWait(500);
+        QScreen* screen = QGuiApplication::primaryScreen();
+        QPixmap shot = screen->grabWindow(0);
+        QPainter painter(&shot);
+        painter.setRenderHint(QPainter::Antialiasing);
+        const QList<QColor> colors{ Qt::red,    QColor(255, 140, 0),
+                                    Qt::yellow, Qt::green,
+                                    Qt::cyan,   Qt::blue,
+                                    Qt::magenta };
+        for (int i = int(regions.size()) - 1; i >= 0; --i) {
+            const QRect region =
+              regions.at(i).translated(-screen->geometry().topLeft());
+            painter.setPen(
+              QPen(colors.at(qMin(i, int(colors.size()) - 1)), i == 0 ? 4 : 2));
+            painter.drawRect(region.adjusted(1, 1, -2, -2));
+        }
+        painter.setPen(Qt::black);
+        painter.setBrush(Qt::white);
+        const QString caption =
+          QStringLiteral("%1: %2 regions under the cross, deepest in red")
+            .arg(QString::fromLatin1(QTest::currentDataTag()))
+            .arg(regions.size());
+        painter.drawRect(10, 10, 560, 30);
+        painter.drawText(QRect(10, 10, 560, 30), Qt::AlignCenter, caption);
+        const QPoint cross = logical - screen->geometry().topLeft();
+        painter.setPen(QPen(Qt::black, 3));
+        painter.drawLine(cross - QPoint(12, 0), cross + QPoint(12, 0));
+        painter.drawLine(cross - QPoint(0, 12), cross + QPoint(0, 12));
+        painter.end();
+        QDir().mkpath(QStringLiteral("screenshots"));
+        shot.save(QStringLiteral("screenshots/%1.png")
+                    .arg(QString::fromLatin1(QTest::currentDataTag())));
+    });
     QElapsedTimer elapsed;
     elapsed.start();
     const auto area = [](const QRect& rect) {

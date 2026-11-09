@@ -32,6 +32,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <thread>
 #include <utility>
 
@@ -227,6 +228,7 @@ private:
         ComPtr<IUIAutomation2> automation;
         ComPtr<IUIAutomationCondition> controlView;
         ComPtr<IUIAutomationCacheRequest> cacheRequest;
+        std::set<HWND> preparedWindows;
     };
 
     // A result is handed out once: asking again starts a new lookup, which
@@ -242,6 +244,33 @@ private:
     {
         return state.generation.load() == lookup.generation &&
                Clock::now() < lookup.deadline;
+    }
+
+    // Chromium-based applications (Chrome, Edge, Electron) only build the
+    // element tree of their web content once an assistive tool asks their
+    // hidden content window for it. They build it in the background, in about
+    // a second, so the follow-up lookups find the elements.
+    static BOOL CALLBACK wakeChromium(HWND child, LPARAM stateValue)
+    {
+        wchar_t name[64] = {};
+        GetClassNameW(child, name, static_cast<int>(std::size(name)));
+        if (wcscmp(name, L"Chrome_RenderWidgetHostHWND") == 0) {
+            const auto* state = reinterpret_cast<const State*>(stateValue);
+            ComPtr<IUIAutomationElement> element;
+            state->automation->ElementFromHandle(child, &element);
+            ComPtr<IAccessible> accessible;
+            AccessibleObjectFromWindow(
+              child, OBJID_CLIENT, IID_PPV_ARGS(&accessible));
+        }
+        return TRUE;
+    }
+
+    static void prepareWindow(State& state, HWND window)
+    {
+        if (state.preparedWindows.insert(window).second) {
+            EnumChildWindows(
+              window, wakeChromium, reinterpret_cast<LPARAM>(&state));
+        }
     }
 
     // The innermost visible child window under the position.
@@ -279,10 +308,7 @@ private:
     }
 
     // MSAA: hit-test down to the deepest element, then collect it and its
-    // parents up to the window. Chromium-based applications (Chrome, Edge,
-    // Electron) build the element tree of their web content in the
-    // background after this request for the client object, so a later lookup
-    // finds the elements.
+    // parents up to the window.
     static QList<QRect> msaaChain(const State& state,
                                   const Lookup& lookup,
                                   HWND window)
@@ -437,6 +463,7 @@ private:
             chain->clear();
             return true;
         }
+        prepareWindow(state, window);
 
         // Prefer MSAA when it finds an element inside the innermost window.
         RECT childRect{};

@@ -96,9 +96,10 @@ The Windows backend follows the same contract:
 5. Native screen coordinates are mapped to Qt logical coordinates per monitor,
    including mixed-scale displays.
 6. Chromium-based applications (Chrome, Edge, Electron) only expose their
-   web content after a screen-reader style `OBJID_CLIENT` request for their
-   window, which the MSAA hit-test makes. They build the tree in about a
-   second, and the follow-up lookups then find the elements.
+   web content after an assistive tool asks their hidden content window
+   (`Chrome_RenderWidgetHostHWND`) for its UI Automation root and MSAA client
+   object. The backend does that once per window; the applications build the
+   tree in about a second, and the follow-up lookups then find the elements.
 
 The X11 backend follows the same contract:
 
