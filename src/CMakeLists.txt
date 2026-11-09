@@ -274,6 +274,7 @@ if (WIN32)
             qhotkey
             dwmapi
             ole32
+            oleacc
             uiautomationcore
     )
 endif ()

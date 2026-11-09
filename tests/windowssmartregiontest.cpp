@@ -64,29 +64,33 @@ void WindowsSmartRegionTest::findsElementsInsideWindow_data()
     QTest::addColumn<QStringList>("arguments");
     QTest::addColumn<QString>("windowClass");
     QTest::addColumn<int>("minimumRegions");
+    // The deepest region may cover at most this share of the window, so a
+    // pane that fills the window does not count as an element.
+    QTest::addColumn<double>("maximumLeafShare");
     QTest::addColumn<int>("timeoutMs");
     // Whether a full screen window covers the application during lookups,
     // like the capture overlay does.
     QTest::addColumn<bool>("covered");
 
     // A text area directly inside a window.
-    QTest::newRow("notepad") << QStringLiteral("notepad.exe") << QStringList()
-                             << QStringLiteral("Notepad") << 2 << 5000 << true;
+    QTest::newRow("notepad")
+      << QStringLiteral("notepad.exe") << QStringList()
+      << QStringLiteral("Notepad") << 2 << 1.0 << 5000 << true;
     // A file list with thousands of items, several levels deep.
     QTest::newRow("explorer")
       << QStringLiteral("explorer.exe")
       << QStringList{ QStringLiteral("C:\\Windows\\System32") }
-      << QStringLiteral("CabinetWClass") << 3 << 5000 << true;
+      << QStringLiteral("CabinetWClass") << 3 << 0.25 << 5000 << true;
     // Chromium builds its accessibility tree only once a client asks for it,
     // and a web page has many elements: the case where lookups are slow.
     const QString chrome = QStringLiteral(
       "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe");
     QTest::newRow("chrome")
       << chrome << QStringList() << QStringLiteral("Chrome_WidgetWin_1") << 4
-      << 10000 << false;
+      << 0.25 << 10000 << false;
     QTest::newRow("chrome-covered")
       << chrome << QStringList() << QStringLiteral("Chrome_WidgetWin_1") << 4
-      << 10000 << true;
+      << 0.25 << 10000 << true;
 }
 
 void WindowsSmartRegionTest::findsElementsInsideWindow()
@@ -95,6 +99,7 @@ void WindowsSmartRegionTest::findsElementsInsideWindow()
     QFETCH(QStringList, arguments);
     QFETCH(QString, windowClass);
     QFETCH(int, minimumRegions);
+    QFETCH(double, maximumLeafShare);
     QFETCH(int, timeoutMs);
     QFETCH(bool, covered);
 
@@ -175,9 +180,15 @@ void WindowsSmartRegionTest::findsElementsInsideWindow()
     QList<QRect> regions;
     QElapsedTimer elapsed;
     elapsed.start();
-    QTRY_VERIFY_WITH_TIMEOUT((regions = detector->regionsAt(logical)).size() >=
-                               minimumRegions,
-                             timeoutMs);
+    const auto area = [](const QRect& rect) {
+        return double(rect.width()) * rect.height();
+    };
+    const auto foundElement = [&]() {
+        regions = detector->regionsAt(logical);
+        return regions.size() >= minimumRegions &&
+               area(regions.first()) <= maximumLeafShare * area(regions.last());
+    };
+    QTRY_VERIFY_WITH_TIMEOUT(foundElement(), timeoutMs);
     qInfo() << "Found" << regions.size() << "regions under" << logical
             << "after" << elapsed.elapsed() << "ms:" << regions;
     for (const QRect& region : regions) {

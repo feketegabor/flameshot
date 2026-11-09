@@ -42,7 +42,7 @@ if(WIN32)
     SOURCES windowssmartregiontest.cpp
             ${CAPTURE_DIR}/smartregiondetector.cpp
             ${CAPTURE_DIR}/windowssmartregiondetector.cpp
-    LIBRARIES Qt${QT_VERSION_MAJOR}::Gui dwmapi ole32 uiautomationcore
+    LIBRARIES Qt${QT_VERSION_MAJOR}::Gui dwmapi ole32 oleacc uiautomationcore
     # Keep a log, so CI can show what was found in each application.
     ARGS -o windows-smart-region.txt,txt -o -,txt)
   target_compile_definitions(

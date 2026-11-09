@@ -16,6 +16,7 @@
 #include <UIAutomation.h>
 // clang-format on
 #include <dwmapi.h>
+#include <oleacc.h>
 #include <wrl/client.h>
 
 #include <QGuiApplication>
@@ -26,8 +27,11 @@
 #include <chrono>
 #include <cmath>
 #include <condition_variable>
+#include <cwchar>
+#include <iterator>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <thread>
 #include <utility>
 
@@ -261,10 +265,34 @@ private:
         }
     }
 
+    static BOOL CALLBACK enableChromiumAccessibility(HWND child, LPARAM)
+    {
+        wchar_t name[64] = {};
+        GetClassNameW(child, name, static_cast<int>(std::size(name)));
+        if (wcscmp(name, L"Chrome_RenderWidgetHostHWND") == 0) {
+            ComPtr<IAccessible> accessible;
+            AccessibleObjectFromWindow(
+              child, OBJID_CLIENT, IID_PPV_ARGS(&accessible));
+        }
+        return TRUE;
+    }
+
+    // Chromium-based applications (Chrome, Edge, Electron) only build the
+    // element tree of their web content after a screen-reader style request
+    // for the client object. They build it in the background, so later
+    // lookups find the elements.
+    void prepareWindow(HWND window)
+    {
+        if (m_preparedWindows.insert(window).second) {
+            EnumChildWindows(window, enableChromiumAccessibility, 0);
+        }
+    }
+
     // Returns false when the lookup ran out of time or was superseded.
-    bool lookUp(const Lookup& lookup, QList<QRect>* chain) const
+    bool lookUp(const Lookup& lookup, QList<QRect>* chain)
     {
         const Request& request = lookup.request;
+        prepareWindow(request.window);
         ComPtr<IUIAutomationElement> root;
         RECT rootRect{};
         if (!IsWindow(request.window) ||
@@ -366,6 +394,7 @@ private:
     ComPtr<IUIAutomation2> m_automation;
     ComPtr<IUIAutomationCondition> m_controlView;
     ComPtr<IUIAutomationCacheRequest> m_cacheRequest;
+    std::set<HWND> m_preparedWindows;
 
     std::thread m_thread;
 };
