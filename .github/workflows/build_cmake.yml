@@ -142,13 +142,15 @@ jobs:
           ctest -C $env:BUILD_TYPE --output-on-failure
           $result = $LASTEXITCODE
           # Show what the Windows backend found in real applications.
-          Get-Content tests/windows-smart-region.txt
+          Get-Content tests/windows-smart-region.txt -ErrorAction SilentlyContinue
+          Get-Content tests/windows-flameshot.txt -ErrorAction SilentlyContinue
+          Get-Content tests/screenshots/input.log -ErrorAction SilentlyContinue
           exit $result
 
       - name: Upload smart region screenshots
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: windows-smart-region-screenshots
+          name: windows-test-screenshots
           path: build/tests/screenshots/
           retention-days: 7

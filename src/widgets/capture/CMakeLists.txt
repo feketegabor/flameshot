@@ -12,6 +12,7 @@ target_sources(
         smartregioncontroller.h
         smartregiondetector.h
         smartregiongeometry.h
+        touchpadscrollclassifier.h
         magnifierwidget.h
         notifierbox.h
         modificationcommand.h)

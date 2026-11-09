@@ -22,6 +22,11 @@ flameshot_add_test(
   LIBRARIES Qt${QT_VERSION_MAJOR}::Core)
 
 flameshot_add_test(
+  touchpad-scroll-classifier
+  SOURCES touchpadscrollclassifiertest.cpp
+  LIBRARIES Qt${QT_VERSION_MAJOR}::Core)
+
+flameshot_add_test(
   smart-region-geometry
   SOURCES smartregiongeometrytest.cpp
   LIBRARIES Qt${QT_VERSION_MAJOR}::Core)
@@ -42,10 +47,26 @@ if(WIN32)
     SOURCES windowssmartregiontest.cpp
             ${CAPTURE_DIR}/smartregiondetector.cpp
             ${CAPTURE_DIR}/windowssmartregiondetector.cpp
+            ${CMAKE_SOURCE_DIR}/src/utils/inputtrace.cpp
+            ${CMAKE_SOURCE_DIR}/src/utils/windowsforeground.cpp
     LIBRARIES Qt${QT_VERSION_MAJOR}::Gui dwmapi ole32 oleacc uiautomationcore
     # Keep a log, so CI can show what was found in each application.
     ARGS -o windows-smart-region.txt,txt -o -,txt)
   target_compile_definitions(
     flameshot-windows-smart-region-tests PRIVATE FLAMESHOT_SMART_REGION_BACKEND)
   set_tests_properties(windows-smart-region PROPERTIES ENVIRONMENT "")
+endif()
+
+if(WIN32)
+  # Drives the real flameshot.exe: needs a desktop, like the test above.
+  flameshot_add_test(
+    windows-flameshot
+    SOURCES windowsflameshottest.cpp
+    LIBRARIES Qt${QT_VERSION_MAJOR}::Gui
+    ARGS -o windows-flameshot.txt,txt -o -,txt)
+  add_dependencies(flameshot-windows-flameshot-tests flameshot)
+  target_compile_definitions(
+    flameshot-windows-flameshot-tests
+    PRIVATE FLAMESHOT_EXE="$<TARGET_FILE:flameshot>")
+  set_tests_properties(windows-flameshot PROPERTIES ENVIRONMENT "")
 endif()

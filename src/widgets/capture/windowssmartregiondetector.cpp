@@ -6,6 +6,8 @@
 
 #include "smartregiondetector.h"
 #include "smartregiongeometry.h"
+#include "utils/inputtrace.h"
+#include "utils/windowsforeground.h"
 
 #define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
@@ -34,6 +36,7 @@
 #include <optional>
 #include <thread>
 #include <utility>
+#include <vector>
 
 using Microsoft::WRL::ComPtr;
 
@@ -727,24 +730,120 @@ namespace {
 // HID usage of precision touchpads.
 constexpr USHORT DIGITIZER_USAGE_PAGE = 0x0D;
 constexpr USHORT TOUCHPAD_USAGE = 0x05;
-// A wheel message this soon after touchpad input comes from the touchpad.
-constexpr ULONGLONG TOUCHPAD_INPUT_WINDOW_MS = 150;
 
-bool touchpadScrollIsNatural()
+// Raw input works in this process once any report has arrived.
+bool s_rawInputSeen = false;
+
+// The precision touchpad's "Scrolling direction" setting. 0, the default,
+// means that moving the fingers up scrolls the content down; other values
+// reverse that. See "Precision touchpad tuning" in Microsoft's docs.
+bool touchpadScrollIsNatural(bool* exists)
 {
-    // 0, the default, means that moving the fingers up scrolls the content
-    // down; other values reverse that. See "Precision touchpad tuning".
     DWORD direction = 0;
     DWORD size = sizeof(direction);
-    RegGetValueW(
-      HKEY_CURRENT_USER,
-      L"Software\\Microsoft\\Windows\\CurrentVersion\\PrecisionTouchPad",
-      L"ScrollDirection",
-      RRF_RT_REG_DWORD,
-      nullptr,
-      &direction,
-      &size);
+    *exists =
+      RegGetValueW(
+        HKEY_CURRENT_USER,
+        L"Software\\Microsoft\\Windows\\CurrentVersion\\PrecisionTouchPad",
+        L"ScrollDirection",
+        RRF_RT_REG_DWORD,
+        nullptr,
+        &direction,
+        &size) == ERROR_SUCCESS;
     return direction == 0;
+}
+
+bool precisionTouchpadPresent()
+{
+    UINT count = 0;
+    if (GetRawInputDeviceList(nullptr, &count, sizeof(RAWINPUTDEVICELIST)) !=
+          0 ||
+        count == 0) {
+        return false;
+    }
+    std::vector<RAWINPUTDEVICELIST> devices(count);
+    const UINT found =
+      GetRawInputDeviceList(devices.data(), &count, sizeof(RAWINPUTDEVICELIST));
+    if (found == UINT(-1)) {
+        return false;
+    }
+    for (UINT i = 0; i < found; ++i) {
+        RID_DEVICE_INFO info{};
+        info.cbSize = sizeof(info);
+        UINT size = sizeof(info);
+        const UINT copied = GetRawInputDeviceInfoW(
+          devices[i].hDevice, RIDI_DEVICEINFO, &info, &size);
+        if (devices[i].dwType == RIM_TYPEHID && copied != 0 &&
+            copied != UINT(-1) &&
+            info.hid.usUsagePage == DIGITIZER_USAGE_PAGE &&
+            info.hid.usUsage == TOUCHPAD_USAGE) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Lets the Windows end-to-end test simulate touchpad contact, which cannot
+// be injected, when FLAMESHOT_TEST_HOOKS is set.
+UINT testContactMessage()
+{
+    static const UINT message =
+      qEnvironmentVariableIsSet("FLAMESHOT_TEST_HOOKS")
+        ? RegisterWindowMessageW(L"FlameshotTestTouchpadContact")
+        : 0;
+    return message;
+}
+
+QString reasonName(TouchpadScrollClassifier::Reason reason)
+{
+    using Reason = TouchpadScrollClassifier::Reason;
+    switch (reason) {
+        case Reason::Mouse:
+            return QStringLiteral("mouse");
+        case Reason::Source:
+            return QStringLiteral("source");
+        case Reason::Contact:
+            return QStringLiteral("contact");
+        case Reason::Sequence:
+            return QStringLiteral("sequence");
+        case Reason::Delta:
+            return QStringLiteral("delta");
+    }
+    return {};
+}
+
+void logMessage(const MSG* msg)
+{
+    switch (msg->message) {
+        case WM_ACTIVATE:
+        case WM_NCACTIVATE:
+        case WM_ACTIVATEAPP:
+        case WM_SETFOCUS:
+        case WM_KILLFOCUS:
+            InputTrace::write(QStringLiteral("focus msg=0x%1 wparam=%2 %3")
+                                .arg(msg->message, 0, 16)
+                                .arg(msg->wParam)
+                                .arg(WindowsForeground::describe()));
+            break;
+        case WM_KEYDOWN:
+            if (msg->wParam == VK_ESCAPE) {
+                InputTrace::write(QStringLiteral("key escape"));
+            }
+            break;
+        case WM_GESTURE:
+        case WM_VSCROLL:
+            InputTrace::write(
+              QStringLiteral("other msg=0x%1").arg(msg->message, 0, 16));
+            break;
+        default:
+            if (msg->message >= 0x0245 && msg->message <= 0x024F) {
+                POINTER_INPUT_TYPE type = PT_POINTER;
+                GetPointerType(GET_POINTERID_WPARAM(msg->wParam), &type);
+                InputTrace::write(QStringLiteral("pointer msg=0x%1 type=%2")
+                                    .arg(msg->message, 0, 16)
+                                    .arg(type));
+            }
+    }
 }
 }
 
@@ -758,29 +857,120 @@ TouchpadScrollTracker::~TouchpadScrollTracker()
     }
 }
 
-void TouchpadScrollTracker::handleMessage(const void* message)
+void TouchpadScrollTracker::attach(void* window)
+{
+    m_window = window;
+    // The overlay receives wheel messages under the pointer even when it is
+    // not the foreground window, so it needs the touchpad's reports then as
+    // well, which RIDEV_INPUTSINK provides.
+    RAWINPUTDEVICE device{ DIGITIZER_USAGE_PAGE,
+                           TOUCHPAD_USAGE,
+                           RIDEV_INPUTSINK,
+                           static_cast<HWND>(window) };
+    m_registered = RegisterRawInputDevices(&device, 1, sizeof(device)) != FALSE;
+    const DWORD error = m_registered ? 0 : GetLastError();
+    bool settingExists = false;
+    m_naturalSetting = touchpadScrollIsNatural(&settingExists);
+    const bool touchpad = precisionTouchpadPresent();
+    m_classifier.setTouchpadPresent(touchpad);
+    m_classifier.setRawInputWorks(s_rawInputSeen);
+    if (InputTrace::enabled()) {
+        InputTrace::write(
+          QStringLiteral("attach hwnd=0x%1 registered=%2 error=%3 "
+                         "touchpad=%4 scrollDirectionNatural=%5 "
+                         "settingExists=%6 rawInputSeen=%7")
+            .arg(reinterpret_cast<quintptr>(window), 0, 16)
+            .arg(m_registered)
+            .arg(error)
+            .arg(touchpad)
+            .arg(m_naturalSetting)
+            .arg(settingExists)
+            .arg(s_rawInputSeen));
+    }
+}
+
+bool TouchpadScrollTracker::handleMessage(const void* message)
 {
     const auto* msg = static_cast<const MSG*>(message);
-    if (!m_registered && msg->hwnd) {
-        // Raw touchpad input goes to the window that asks for it, in
-        // addition to the usual mouse and wheel messages.
-        RAWINPUTDEVICE device{
-            DIGITIZER_USAGE_PAGE, TOUCHPAD_USAGE, 0, msg->hwnd
-        };
-        m_registered =
-          RegisterRawInputDevices(&device, 1, sizeof(device)) != FALSE;
+    if (!msg->hwnd) {
+        return false;
     }
+    if (m_enabled && msg->hwnd != m_window) {
+        // Also covers a window that has been recreated.
+        attach(msg->hwnd);
+    }
+    if (InputTrace::enabled()) {
+        logMessage(msg);
+    }
+    const auto time = static_cast<quint32>(GetMessageTime());
 
-    if (msg->message == WM_INPUT) {
-        m_lastTouchpadInput = GetTickCount64();
-    } else if (msg->message == WM_MOUSEWHEEL) {
+    const UINT testContact = testContactMessage();
+    if (msg->message == WM_INPUT ||
+        (testContact != 0 && msg->message == testContact)) {
+        bool touchpadReport = msg->message != WM_INPUT;
+        if (!touchpadReport) {
+            RAWINPUTHEADER header{};
+            UINT size = sizeof(header);
+            touchpadReport =
+              GetRawInputData(reinterpret_cast<HRAWINPUT>(msg->lParam),
+                              RID_HEADER,
+                              &header,
+                              &size,
+                              sizeof(header)) != UINT(-1) &&
+              header.dwType == RIM_TYPEHID;
+        }
+        if (touchpadReport) {
+            s_rawInputSeen = true;
+            m_classifier.contactReport(time);
+            // Log the start of each burst of reports, then every 20th.
+            m_inputBurst =
+              quint32(time - m_lastInputTime) > 300 ? 0 : m_inputBurst + 1;
+            m_lastInputTime = time;
+            if (InputTrace::enabled() &&
+                (m_inputBurst < 5 || m_inputBurst % 20 == 0)) {
+                InputTrace::write(
+                  QStringLiteral("input time=%1 sink=%2 burst=%3 test=%4")
+                    .arg(time)
+                    .arg(msg->message == WM_INPUT
+                           ? static_cast<int>(
+                               GET_RAWINPUT_CODE_WPARAM(msg->wParam))
+                           : -1)
+                    .arg(m_inputBurst)
+                    .arg(msg->message != WM_INPUT));
+            }
+        }
+    } else if (msg->message == WM_MOUSEWHEEL ||
+               msg->message == WM_MOUSEHWHEEL) {
         INPUT_MESSAGE_SOURCE source{};
-        const bool fromTouchpad =
-          (GetCurrentInputMessageSource(&source) &&
-           source.deviceType == IMDT_TOUCHPAD) ||
-          GetTickCount64() - m_lastTouchpadInput < TOUCHPAD_INPUT_WINDOW_MS;
-        m_naturalScroll = fromTouchpad && touchpadScrollIsNatural();
+        const bool sourceKnown = GetCurrentInputMessageSource(&source);
+        const bool sourceIsTouchpad =
+          sourceKnown && source.deviceType == IMDT_TOUCHPAD;
+        const int delta = GET_WHEEL_DELTA_WPARAM(msg->wParam);
+        if (msg->message == WM_MOUSEWHEEL) {
+            const auto reason =
+              m_classifier.classifyWheel(time, delta, sourceIsTouchpad);
+            m_fromTouchpad = reason != TouchpadScrollClassifier::Reason::Mouse;
+            m_naturalScroll = m_fromTouchpad && m_naturalSetting;
+            if (InputTrace::enabled()) {
+                InputTrace::write(
+                  QStringLiteral("wheel time=%1 delta=%2 extra=0x%3 "
+                                 "device=0x%4 origin=0x%5 reason=%6 "
+                                 "natural=%7 foreground=%8")
+                    .arg(time)
+                    .arg(delta)
+                    .arg(static_cast<quintptr>(GetMessageExtraInfo()), 0, 16)
+                    .arg(sourceKnown ? int(source.deviceType) : -1, 0, 16)
+                    .arg(sourceKnown ? int(source.originId) : -1, 0, 16)
+                    .arg(reasonName(reason))
+                    .arg(m_naturalScroll)
+                    .arg(GetForegroundWindow() == msg->hwnd));
+            }
+        } else if (InputTrace::enabled()) {
+            InputTrace::write(
+              QStringLiteral("hwheel time=%1 delta=%2").arg(time).arg(delta));
+        }
     }
+    return msg->message == WM_ACTIVATEAPP || msg->message == WM_NCACTIVATE;
 }
 
 bool nativeSmartRegionDetectorSupported()

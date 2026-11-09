@@ -9,6 +9,10 @@
 
 #include <memory>
 
+#if defined(Q_OS_WIN)
+#include "touchpadscrollclassifier.h"
+#endif
+
 // Finds the windows and UI elements under the pointer using native platform
 // APIs, so that a click can select them without dragging a rectangle.
 class SmartRegionDetector
@@ -58,16 +62,32 @@ public:
     TouchpadScrollTracker(const TouchpadScrollTracker&) = delete;
     TouchpadScrollTracker& operator=(const TouchpadScrollTracker&) = delete;
 
-    // Pass every native message of the window that receives wheel input.
-    void handleMessage(const void* message);
+    // Start receiving the touchpad's raw input. Until then, messages are
+    // only written to the input log.
+    void enable() { m_enabled = true; }
 
-    // Whether the last wheel message came from such a touchpad.
+    // Pass every native message of the window that receives wheel input.
+    // Returns whether the message may have changed the foreground window.
+    bool handleMessage(const void* message);
+
+    // Whether the last wheel message came from a touchpad.
+    bool fromTouchpad() const { return m_fromTouchpad; }
+    // Whether it came from a touchpad that scrolls content opposite to the
+    // fingers.
     bool naturalScroll() const { return m_naturalScroll; }
 
 private:
+    void attach(void* window);
+
+    TouchpadScrollClassifier m_classifier;
+    void* m_window = nullptr;
+    bool m_enabled = false;
     bool m_registered = false;
+    bool m_naturalSetting = true;
+    bool m_fromTouchpad = false;
     bool m_naturalScroll = false;
-    unsigned long long m_lastTouchpadInput = 0;
+    quint32 m_lastInputTime = 0;
+    int m_inputBurst = 0;
 };
 #endif
 

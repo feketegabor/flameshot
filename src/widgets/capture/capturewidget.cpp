@@ -16,6 +16,7 @@
 #include "core/qguiappcurrentscreen.h"
 #include "tools/copy/copytool.h"
 #include "utils/abstractlogger.h"
+#include "utils/inputtrace.h"
 #include "utils/screengrabber.h"
 #include "utils/screenshotsaver.h"
 #include "widgets/capture/colorpicker.h"
@@ -28,6 +29,9 @@
 #include "widgets/orientablepushbutton.h"
 #include "widgets/panel/sidepanelwidget.h"
 #include "widgets/panel/utilitypanel.h"
+#if defined(Q_OS_WIN)
+#include "utils/windowsforeground.h"
+#endif
 
 #include <QApplication>
 #include <QCheckBox>
@@ -797,7 +801,13 @@ void CaptureWidget::paintEvent(QPaintEvent* paintEvent)
     drawInactiveRegion(&painter);
     drawSmartRegion(&painter);
 
-    if (!isActiveWindow()) {
+    bool hasKeyboard = isActiveWindow();
+#if defined(Q_OS_WIN)
+    // Qt reports the window as active even when Windows has refused to bring
+    // it to the front and keys go to another application.
+    hasKeyboard = hasKeyboard && WindowsForeground::isForeground(winId());
+#endif
+    if (!hasKeyboard) {
         drawErrorMessage(
           tr("Flameshot has lost focus. Keyboard shortcuts won't "
              "work until you click somewhere."),
@@ -1170,8 +1180,9 @@ bool CaptureWidget::nativeEvent(const QByteArray& eventType,
                                 qintptr* result)
 {
     // Called with the native message before Qt delivers the wheel event.
-    if (m_smartRegion) {
-        m_touchpadScroll.handleMessage(message);
+    if (m_touchpadScroll.handleMessage(message)) {
+        // Repaint the focus warning, which depends on the foreground window.
+        update();
     }
     return QWidget::nativeEvent(eventType, message, result);
 }
@@ -1195,15 +1206,31 @@ void CaptureWidget::wheelEvent(QWheelEvent* e)
         // With natural scrolling the delta is inverted. Normalize it so that
         // pushing up always selects the parent.
         bool natural = e->inverted();
+        bool continuous = qAbs(e->angleDelta().y()) < MOUSE_WHEEL_TRESHOLD;
 #if defined(Q_OS_WIN)
         natural = natural || m_touchpadScroll.naturalScroll();
+        // A fast swipe sends large deltas but is still a stream of events.
+        continuous = continuous || m_touchpadScroll.fromTouchpad();
 #endif
         if (natural) {
             delta = -delta;
         }
-        const bool continuous =
-          qAbs(e->angleDelta().y()) < MOUSE_WHEEL_TRESHOLD;
+        const QRect before = m_smartRegion->current();
         m_smartRegion->step(delta, continuous);
+        if (InputTrace::enabled()) {
+            const QRect after = m_smartRegion->current();
+            InputTrace::write(
+              QStringLiteral("step angle=%1 inverted=%2 natural=%3 delta=%4 "
+                             "continuous=%5 dir=%6")
+                .arg(e->angleDelta().y())
+                .arg(e->inverted())
+                .arg(natural)
+                .arg(delta)
+                .arg(continuous)
+                .arg(after == before          ? QStringLiteral("none")
+                     : after.contains(before) ? QStringLiteral("parent")
+                                              : QStringLiteral("child")));
+        }
         m_notifierBox->hide();
         e->accept();
         return;
@@ -1495,6 +1522,9 @@ void CaptureWidget::initSmartRegion()
     }
     detector->snapshotWindows();
     m_smartRegion = new SmartRegionController(std::move(detector), this);
+#if defined(Q_OS_WIN)
+    m_touchpadScroll.enable();
+#endif
     connect(m_smartRegion,
             &SmartRegionController::currentChanged,
             this,
