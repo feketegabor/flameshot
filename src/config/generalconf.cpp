@@ -7,6 +7,7 @@
 
 #include <QCheckBox>
 #include <QComboBox>
+#include <QDesktopServices>
 #include <QFile>
 #include <QFileDialog>
 #include <QGroupBox>
@@ -20,6 +21,7 @@
 #include <QSpinBox>
 #include <QStandardPaths>
 #include <QStringDecoder>
+#include <QUrl>
 #include <QVBoxLayout>
 
 GeneralConf::GeneralConf(QWidget* parent)
@@ -1020,10 +1022,19 @@ void GeneralConf::initSmartRegionDetection()
          "detect interface elements inside windows. Whole windows are "
          "detected without it."));
     m_scrollAreaLayout->addWidget(m_smartRegionAccessibilityButton);
-    connect(m_smartRegionAccessibilityButton,
-            &QPushButton::clicked,
-            this,
-            &requestMacOsAccessibilityPermission);
+    connect(
+      m_smartRegionAccessibilityButton, &QPushButton::clicked, this, []() {
+          if (macOsAccessibilityTrusted()) {
+              return;
+          }
+          // macOS only prompts when Flameshot has no entry yet. An entry left
+          // by an earlier build looks enabled but no longer applies, so also
+          // open the settings page where it can be removed and added again.
+          requestMacOsAccessibilityPermission();
+          QDesktopServices::openUrl(QUrl(
+            QStringLiteral("x-apple.systempreferences:com.apple.preference."
+                           "security?Privacy_Accessibility")));
+      });
 #endif
 }
 
