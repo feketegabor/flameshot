@@ -11,11 +11,16 @@
 #include <Windows.h>
 
 #include <QDebug>
+#include <QDir>
+#include <QElapsedTimer>
+#include <QFile>
 #include <QGuiApplication>
 #include <QProcess>
 #include <QScopeGuard>
 #include <QScreen>
+#include <QTemporaryDir>
 #include <QTest>
+#include <QUrl>
 
 class WindowsSmartRegionTest : public QObject
 {
@@ -58,16 +63,23 @@ void WindowsSmartRegionTest::findsElementsInsideWindow_data()
     QTest::addColumn<QStringList>("arguments");
     QTest::addColumn<QString>("windowClass");
     QTest::addColumn<int>("minimumRegions");
+    QTest::addColumn<int>("timeoutMs");
 
     // A text area directly inside a window.
     QTest::newRow("notepad") << QStringLiteral("notepad.exe") << QStringList()
-                             << QStringLiteral("Notepad") << 2;
+                             << QStringLiteral("Notepad") << 2 << 5000;
     // A file list with thousands of items several levels deep: too slow for a
     // lookup that walks every element one call at a time.
     QTest::newRow("explorer")
       << QStringLiteral("explorer.exe")
       << QStringList{ QStringLiteral("C:\\Windows\\System32") }
-      << QStringLiteral("CabinetWClass") << 3;
+      << QStringLiteral("CabinetWClass") << 3 << 5000;
+    // Chromium builds its accessibility tree only once a client asks for it,
+    // and a web page has many elements: the case where lookups are slow.
+    QTest::newRow("chrome")
+      << QStringLiteral(
+           "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe")
+      << QStringList() << QStringLiteral("Chrome_WidgetWin_1") << 4 << 10000;
 }
 
 void WindowsSmartRegionTest::findsElementsInsideWindow()
@@ -76,6 +88,33 @@ void WindowsSmartRegionTest::findsElementsInsideWindow()
     QFETCH(QStringList, arguments);
     QFETCH(QString, windowClass);
     QFETCH(int, minimumRegions);
+    QFETCH(int, timeoutMs);
+
+    QTemporaryDir profile;
+    if (QString(QTest::currentDataTag()) == QLatin1String("chrome")) {
+        if (!QFile::exists(program)) {
+            QSKIP("Chrome is not installed");
+        }
+        // A long list of nested elements under the middle of the window.
+        QFile page(profile.filePath(QStringLiteral("page.html")));
+        QVERIFY(page.open(QIODevice::WriteOnly));
+        page.write("<body style='margin:0'><main><section><ul>");
+        for (int i = 0; i < 3000; ++i) {
+            page.write(QStringLiteral("<li><span>Item %1</span> <a href='#'>"
+                                      "link</a></li>")
+                         .arg(i)
+                         .toUtf8());
+        }
+        page.write("</ul></section></main></body>");
+        page.close();
+        arguments = { QStringLiteral("--no-first-run"),
+                      QStringLiteral("--no-default-browser-check"),
+                      QStringLiteral("--user-data-dir=") +
+                        QDir::toNativeSeparators(
+                          profile.filePath(QStringLiteral("profile"))),
+                      QStringLiteral("--new-window"),
+                      QUrl::fromLocalFile(page.fileName()).toString() };
+    }
 
     QProcess process;
     process.start(program, arguments);
@@ -116,9 +155,13 @@ void WindowsSmartRegionTest::findsElementsInsideWindow()
     // Ask repeatedly, like the capture widget does while the pointer rests:
     // the first lookups may only find the window.
     QList<QRect> regions;
-    QTRY_VERIFY_WITH_TIMEOUT(
-      (regions = detector->regionsAt(logical)).size() >= minimumRegions, 5000);
-    qInfo() << "Regions under" << logical << regions;
+    QElapsedTimer elapsed;
+    elapsed.start();
+    QTRY_VERIFY_WITH_TIMEOUT((regions = detector->regionsAt(logical)).size() >=
+                               minimumRegions,
+                             timeoutMs);
+    qInfo() << "Found" << regions.size() << "regions under" << logical
+            << "after" << elapsed.elapsed() << "ms:" << regions;
     for (const QRect& region : regions) {
         QVERIFY(region.contains(logical));
     }

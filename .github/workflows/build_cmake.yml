@@ -140,3 +140,6 @@ jobs:
         shell: powershell
         run: |
           ctest -C $env:BUILD_TYPE --output-on-failure
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # Show what the Windows backend found in real applications.
+          ctest -C $env:BUILD_TYPE -R windows-smart-region --verbose
