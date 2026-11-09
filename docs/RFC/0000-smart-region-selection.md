@@ -83,8 +83,11 @@ The Windows backend follows the same contract:
 3. Microsoft UI Automation starts from the recorded window handle, hit-tests
    its control-view descendants, and walks back through their parents.
 4. UI Automation calls run on a dedicated MTA worker with connection and
-   transaction timeouts, a request budget, and a bounded GUI wait. An unavailable
-   provider or expired request falls back to the containing window.
+   transaction timeouts. Each level of the element tree is fetched with its
+   bounding rectangles in one cached `FindAll` call. The GUI thread waits at
+   most 60 milliseconds and shows the window meanwhile; a slower lookup keeps
+   running for up to 1.5 seconds, and its result is picked up by the follow-up
+   lookups while the pointer rests.
 5. Native screen coordinates are mapped to Qt logical coordinates per monitor,
    including mixed-scale displays.
 
@@ -147,11 +150,11 @@ require a permission prompt.
 ## Performance Impact
 
 Window enumeration occurs once per capture. Pointer hit-testing is throttled to
-at most once every 35 milliseconds, and up to three follow-up lookups run while
-the pointer rests (after 150, 400 and 1000 milliseconds). Accessibility, AT-SPI
-and UI Automation calls use 80-millisecond limits within a 200-millisecond
-request budget. Windows waits up to 250 milliseconds for a worker result on the
-GUI thread; macOS and X11 perform their budgeted lookup on the GUI thread. These
+at most once every 35 milliseconds, and up to four follow-up lookups run while
+the pointer rests (after 150, 400, 1000 and 2000 milliseconds). Accessibility and AT-SPI
+calls use 80-millisecond limits within a 200-millisecond request budget on the
+GUI thread. UI Automation runs on a worker thread with 300-millisecond call
+limits and a 1.5-second budget; the GUI thread waits at most 60 milliseconds. These
 are best-effort limits, not process isolation or a guarantee against arbitrary
 provider stalls or COM teardown delays. Painting uses only the current region.
 

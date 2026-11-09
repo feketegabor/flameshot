@@ -38,15 +38,14 @@ using SmartRegionGeometry::ScreenMapping;
 
 constexpr int MIN_WINDOW_SIDE = 20;
 
-// UI Automation calls run on a worker thread. A request is abandoned after
-// its budget, and the GUI thread waits slightly longer before falling back
-// to the window, so a hung provider cannot freeze the overlay.
-constexpr std::chrono::milliseconds REQUEST_BUDGET(200);
-constexpr std::chrono::milliseconds GUI_WAIT(250);
-constexpr DWORD PROVIDER_TIMEOUT_MS = 80;
+// How long the GUI thread waits for a UI Automation lookup before showing
+// the window, and how long the worker may keep looking in the background.
+constexpr std::chrono::milliseconds GUI_WAIT(60);
+constexpr std::chrono::milliseconds REQUEST_BUDGET(1500);
+// Per call into another application.
+constexpr DWORD PROVIDER_TIMEOUT_MS = 300;
 constexpr int MAX_DEPTH = 32;
-constexpr int MAX_VISITED_ELEMENTS = 1024;
-constexpr int MAX_SIBLINGS = 512;
+constexpr int MAX_VISITED_ELEMENTS = 2048;
 using SmartRegionGeometry::toLogicalRect;
 
 struct MonitorEnumerationContext
@@ -82,13 +81,26 @@ BOOL CALLBACK collectMonitor(HMONITOR monitor, HDC, LPRECT, LPARAM contextValue)
         return TRUE;
     }
 
+    // Qt keeps screen origins in physical pixels on Windows, so the origin
+    // identifies the screen; Qt 6 may report a friendly name instead of the
+    // device name.
     const QString deviceName = QString::fromWCharArray(info.szDevice);
-    auto screenIterator = std::find_if(
-      context->unmatchedScreens.begin(),
-      context->unmatchedScreens.end(),
-      [&deviceName](QScreen* screen) {
-          return screen->name().compare(deviceName, Qt::CaseInsensitive) == 0;
-      });
+    const QPoint origin(info.rcMonitor.left, info.rcMonitor.top);
+    auto screenIterator =
+      std::find_if(context->unmatchedScreens.begin(),
+                   context->unmatchedScreens.end(),
+                   [&origin](QScreen* screen) {
+                       return screen->geometry().topLeft() == origin;
+                   });
+    if (screenIterator == context->unmatchedScreens.end()) {
+        screenIterator =
+          std::find_if(context->unmatchedScreens.begin(),
+                       context->unmatchedScreens.end(),
+                       [&deviceName](QScreen* screen) {
+                           return screen->name().compare(
+                                    deviceName, Qt::CaseInsensitive) == 0;
+                       });
+    }
     if (screenIterator == context->unmatchedScreens.end()) {
         QScreen* primary = QGuiApplication::primaryScreen();
         screenIterator = std::find(context->unmatchedScreens.begin(),
@@ -109,301 +121,252 @@ BOOL CALLBACK collectMonitor(HMONITOR monitor, HDC, LPRECT, LPARAM contextValue)
     return TRUE;
 }
 
+// Runs UI Automation on a thread of its own: calls into other processes can
+// be slow, and a hung application must not freeze the overlay. The GUI thread
+// only waits briefly. A slower lookup keeps running, and its result is kept,
+// so asking again for the same window and position (the capture widget does
+// while the pointer rests) returns it without starting over.
 class AutomationWorker
 {
-private:
-    using Clock = std::chrono::steady_clock;
-
-    struct Request
-    {
-        quint64 id;
-        HWND window;
-        POINT position;
-        Clock::time_point deadline;
-    };
-
-    struct State
-    {
-        std::mutex mutex;
-        std::condition_variable requestReady;
-        std::condition_variable resultReady;
-        std::optional<Request> pendingRequest;
-        QList<QRect> result;
-        quint64 completedRequestId{ 0 };
-        bool initializationFailed{ false };
-        std::atomic<quint64> latestRequestId{ 0 };
-        std::atomic_bool stopping{ false };
-        std::atomic_bool available{ false };
-    };
-
 public:
     AutomationWorker()
-      : m_state(std::make_unique<State>())
-      , m_thread([state = m_state.get()]() { run(state); })
+      : m_thread([this]() { run(); })
     {}
 
     ~AutomationWorker()
     {
         {
-            std::lock_guard lock(m_state->mutex);
-            m_state->stopping.store(true);
-            m_state->latestRequestId.fetch_add(1);
+            std::lock_guard lock(m_mutex);
+            m_stopping = true;
+            ++m_generation;
         }
-        m_state->requestReady.notify_one();
-        // Native per-call limits and request cancellation bound normal UIA
-        // shutdown; all interfaces stay on their owning MTA thread.
+        m_wake.notify_one();
         m_thread.join();
     }
 
+    // Element rectangles in physical pixels, from the deepest element under
+    // the position to the window. Empty while the lookup is still running.
     QList<QRect> elementChainAt(HWND window, const POINT& position)
     {
-        std::unique_lock lock(m_state->mutex);
-        if (m_state->initializationFailed || m_state->stopping.load()) {
-            return {};
+        const Request request{ window, position };
+        std::unique_lock lock(m_mutex);
+        if (m_finished == request) {
+            return m_result;
         }
-        const quint64 requestId = m_state->latestRequestId.fetch_add(1) + 1;
-        m_state->pendingRequest =
-          Request{ requestId, window, position, Clock::now() + REQUEST_BUDGET };
-        m_state->requestReady.notify_one();
-        if (!m_state->resultReady.wait_for(
-              lock,
-              GUI_WAIT,
-              [this, requestId]() {
-                  return m_state->stopping.load() ||
-                         m_state->initializationFailed ||
-                         m_state->completedRequestId == requestId;
-              }) ||
-            m_state->completedRequestId != requestId) {
-            // Invalidate timed-out work as well as superseded requests.
-            quint64 expected = requestId;
-            m_state->latestRequestId.compare_exchange_strong(expected,
-                                                             requestId + 1);
-            return {};
+        if (m_running != request && m_pending != request) {
+            // A new position supersedes the lookup in progress.
+            m_pending = request;
+            ++m_generation;
+            m_wake.notify_one();
         }
-        return m_state->result;
+        m_done.wait_for(lock, GUI_WAIT, [&]() {
+            return m_stopping || m_finished == request;
+        });
+        return m_finished == request ? m_result : QList<QRect>();
     }
 
-    bool available() const { return m_state->available.load(); }
+    bool available() const { return m_available.load(); }
 
 private:
-    static bool active(const State& state, const Request& request)
-    {
-        return !state.stopping.load() &&
-               state.latestRequestId.load() == request.id &&
-               Clock::now() < request.deadline;
-    }
+    using Clock = std::chrono::steady_clock;
 
-    static bool elementRectAt(const State& state,
-                              const Request& request,
-                              IUIAutomationElement* element,
-                              RECT* rect)
+    struct Request
     {
-        if (!active(state, request) ||
-            FAILED(element->get_CurrentBoundingRectangle(rect)) ||
-            !validNativeRect(*rect) ||
-            !containsPoint(*rect, request.position) ||
-            !active(state, request)) {
-            return false;
+        HWND window;
+        POINT position;
+        bool operator==(const Request& other) const
+        {
+            return window == other.window && position.x == other.position.x &&
+                   position.y == other.position.y;
         }
-
-        BOOL offscreen = TRUE;
-        return SUCCEEDED(element->get_CurrentIsOffscreen(&offscreen)) &&
-               !offscreen && active(state, request);
-    }
-
-    struct ElementHit
-    {
-        ComPtr<IUIAutomationElement> element;
-        int depth;
-        qint64 area;
+        bool operator!=(const Request& other) const
+        {
+            return !(*this == other);
+        }
     };
 
-    static ElementHit deepestHitAt(const State& state,
-                                   const Request& request,
-                                   IUIAutomationTreeWalker* walker,
-                                   IUIAutomationElement* element,
-                                   const RECT& geometry,
-                                   int depth,
-                                   int* visited)
+    struct Lookup
     {
-        ElementHit best{
-            element,
-            depth,
-            static_cast<qint64>(geometry.right - geometry.left) *
-              (geometry.bottom - geometry.top),
-        };
-        if (depth >= MAX_DEPTH || *visited >= MAX_VISITED_ELEMENTS ||
-            !active(state, request)) {
-            return best;
-        }
+        Request request;
+        quint64 generation;
+        Clock::time_point deadline;
+    };
 
-        ComPtr<IUIAutomationElement> child;
-        if (FAILED(walker->GetFirstChildElement(element, &child))) {
-            return best;
-        }
-
-        for (int siblingCount = 0;
-             child && siblingCount < MAX_SIBLINGS &&
-             *visited < MAX_VISITED_ELEMENTS && active(state, request);
-             ++siblingCount) {
-            ++*visited;
-            RECT childRect{};
-            if (elementRectAt(state, request, child.Get(), &childRect)) {
-                ElementHit candidate = deepestHitAt(state,
-                                                    request,
-                                                    walker,
-                                                    child.Get(),
-                                                    childRect,
-                                                    depth + 1,
-                                                    visited);
-                if (candidate.depth > best.depth ||
-                    (candidate.depth == best.depth &&
-                     candidate.area < best.area)) {
-                    best = std::move(candidate);
-                }
-            }
-
-            if (!active(state, request)) {
-                break;
-            }
-            ComPtr<IUIAutomationElement> next;
-            if (FAILED(walker->GetNextSiblingElement(child.Get(), &next))) {
-                break;
-            }
-            child = std::move(next);
-        }
-        return best;
+    bool active(const Lookup& lookup) const
+    {
+        return m_generation.load() == lookup.generation &&
+               Clock::now() < lookup.deadline;
     }
 
-    static ComPtr<IUIAutomationElement> deepestElementAt(
-      const State& state,
-      const Request& request,
-      IUIAutomationTreeWalker* walker,
-      IUIAutomationElement* root)
+    // Reads the bounding rectangle fetched with the element. Off-screen
+    // elements and those not under the position are skipped.
+    bool cachedRectAt(IUIAutomationElement* element,
+                      const POINT& position,
+                      RECT* rect) const
     {
-        RECT rootRect{};
-        if (!elementRectAt(state, request, root, &rootRect)) {
-            return root;
-        }
+        BOOL offscreen = TRUE;
+        return SUCCEEDED(element->get_CachedBoundingRectangle(rect)) &&
+               validNativeRect(*rect) && containsPoint(*rect, position) &&
+               SUCCEEDED(element->get_CachedIsOffscreen(&offscreen)) &&
+               !offscreen;
+    }
 
+    struct Search
+    {
+        const Lookup& lookup;
+        QList<QRect> path;
+        QList<QRect> deepest;
         int visited = 0;
-        return deepestHitAt(state, request, walker, root, rootRect, 0, &visited)
-          .element;
-    }
+    };
 
-    static QList<QRect> collectElementChain(const State& state,
-                                            const Request& request,
-                                            IUIAutomation* automation,
-                                            IUIAutomationTreeWalker* walker)
+    // Siblings can overlap, so every branch under the position is searched;
+    // the deepest element wins, and the smaller one on a tie. Each level is
+    // fetched with its rectangles in a single call into the application.
+    void descend(IUIAutomationElement* element, Search& search) const
     {
-        if (!IsWindow(request.window) || !active(state, request)) {
-            return {};
+        const auto area = [](const QRect& rect) {
+            return qint64(rect.width()) * rect.height();
+        };
+        if (search.path.size() > search.deepest.size() ||
+            (search.path.size() == search.deepest.size() &&
+             area(search.path.last()) < area(search.deepest.last()))) {
+            search.deepest = search.path;
         }
-
-        ComPtr<IUIAutomationElement> root;
-        if (FAILED(automation->ElementFromHandle(request.window, &root)) ||
-            !root || !active(state, request)) {
-            return {};
-        }
-
-        ComPtr<IUIAutomationElement> current =
-          deepestElementAt(state, request, walker, root.Get());
-        QList<QRect> geometries;
-        for (int depth = 0;
-             current && depth < MAX_DEPTH && active(state, request);
-             ++depth) {
-            RECT geometry{};
-            if (elementRectAt(state, request, current.Get(), &geometry)) {
-                geometries.append(rectFromNative(geometry));
-            }
-
-            if (!active(state, request)) {
-                return {};
-            }
-            BOOL isRoot = FALSE;
-            if (SUCCEEDED(automation->CompareElements(
-                  current.Get(), root.Get(), &isRoot)) &&
-                isRoot) {
-                break;
-            }
-
-            if (!active(state, request)) {
-                return {};
-            }
-            ComPtr<IUIAutomationElement> parent;
-            if (FAILED(walker->GetParentElement(current.Get(), &parent)) ||
-                !parent) {
-                break;
-            }
-            current = std::move(parent);
-        }
-        return active(state, request) ? geometries : QList<QRect>{};
-    }
-
-    static void run(State* state)
-    {
-        const HRESULT comResult = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-        if (FAILED(comResult)) {
-            std::lock_guard lock(state->mutex);
-            state->initializationFailed = true;
-            state->resultReady.notify_all();
+        if (search.path.size() >= MAX_DEPTH ||
+            search.visited >= MAX_VISITED_ELEMENTS || !active(search.lookup)) {
             return;
         }
 
-        ComPtr<IUIAutomation2> automation;
-        ComPtr<IUIAutomationTreeWalker> walker;
-        // CUIAutomation8 exposes the documented provider timeout interface.
-        // If those limits cannot be installed, retain window-only snapping.
-        if (SUCCEEDED(CoCreateInstance(CLSID_CUIAutomation8,
-                                       nullptr,
-                                       CLSCTX_INPROC_SERVER,
-                                       IID_PPV_ARGS(&automation))) &&
-            SUCCEEDED(automation->put_ConnectionTimeout(PROVIDER_TIMEOUT_MS)) &&
-            SUCCEEDED(
-              automation->put_TransactionTimeout(PROVIDER_TIMEOUT_MS)) &&
-            SUCCEEDED(automation->get_ControlViewWalker(&walker)) && walker) {
-            state->available.store(true);
+        ComPtr<IUIAutomationElementArray> children;
+        int count = 0;
+        if (FAILED(element->FindAllBuildCache(TreeScope_Children,
+                                              m_controlView.Get(),
+                                              m_cacheRequest.Get(),
+                                              &children)) ||
+            !children || FAILED(children->get_Length(&count))) {
+            return;
         }
-
-        for (;;) {
-            Request request{};
-            {
-                std::unique_lock lock(state->mutex);
-                state->requestReady.wait(lock, [&state]() {
-                    return state->stopping.load() ||
-                           state->pendingRequest.has_value();
-                });
-                if (state->stopping.load()) {
-                    break;
-                }
-                request = *state->pendingRequest;
-                state->pendingRequest.reset();
+        for (int i = 0; i < count && search.visited < MAX_VISITED_ELEMENTS &&
+                        active(search.lookup);
+             ++i, ++search.visited) {
+            ComPtr<IUIAutomationElement> child;
+            RECT rect{};
+            if (SUCCEEDED(children->GetElement(i, &child)) && child &&
+                cachedRectAt(
+                  child.Get(), search.lookup.request.position, &rect)) {
+                search.path.append(rectFromNative(rect));
+                descend(child.Get(), search);
+                search.path.removeLast();
             }
-
-            QList<QRect> result;
-            if (state->available.load()) {
-                result = collectElementChain(
-                  *state, request, automation.Get(), walker.Get());
-            }
-
-            {
-                std::lock_guard lock(state->mutex);
-                if (state->latestRequestId.load() == request.id) {
-                    state->result = std::move(result);
-                    state->completedRequestId = request.id;
-                }
-            }
-            state->resultReady.notify_all();
         }
-
-        // Release apartment-bound interfaces before shutting down COM.
-        walker.Reset();
-        automation.Reset();
-        CoUninitialize();
-        state->available.store(false);
     }
 
-    std::unique_ptr<State> m_state;
+    // Returns false when the lookup ran out of time or was superseded.
+    bool lookUp(const Lookup& lookup, QList<QRect>* chain) const
+    {
+        const Request& request = lookup.request;
+        ComPtr<IUIAutomationElement> root;
+        RECT rootRect{};
+        if (!IsWindow(request.window) ||
+            FAILED(m_automation->ElementFromHandleBuildCache(
+              request.window, m_cacheRequest.Get(), &root)) ||
+            !root || !cachedRectAt(root.Get(), request.position, &rootRect)) {
+            chain->clear();
+            return active(lookup);
+        }
+        Search search{ lookup, { rectFromNative(rootRect) }, {} };
+        descend(root.Get(), search);
+        if (!active(lookup)) {
+            return false;
+        }
+        chain->clear();
+        for (auto it = search.deepest.crbegin(); it != search.deepest.crend();
+             ++it) {
+            chain->append(*it);
+        }
+        return true;
+    }
+
+    bool initialize()
+    {
+        // CUIAutomation8 provides the provider timeouts.
+        return SUCCEEDED(CoCreateInstance(CLSID_CUIAutomation8,
+                                          nullptr,
+                                          CLSCTX_INPROC_SERVER,
+                                          IID_PPV_ARGS(&m_automation))) &&
+               SUCCEEDED(
+                 m_automation->put_ConnectionTimeout(PROVIDER_TIMEOUT_MS)) &&
+               SUCCEEDED(
+                 m_automation->put_TransactionTimeout(PROVIDER_TIMEOUT_MS)) &&
+               SUCCEEDED(
+                 m_automation->get_ControlViewCondition(&m_controlView)) &&
+               SUCCEEDED(m_automation->CreateCacheRequest(&m_cacheRequest)) &&
+               SUCCEEDED(m_cacheRequest->AddProperty(
+                 UIA_BoundingRectanglePropertyId)) &&
+               SUCCEEDED(
+                 m_cacheRequest->AddProperty(UIA_IsOffscreenPropertyId));
+    }
+
+    void run()
+    {
+        const bool comReady =
+          SUCCEEDED(CoInitializeEx(nullptr, COINIT_MULTITHREADED));
+        m_available.store(comReady && initialize());
+
+        std::unique_lock lock(m_mutex);
+        for (;;) {
+            m_wake.wait(lock, [this]() { return m_stopping || m_pending; });
+            if (m_stopping) {
+                break;
+            }
+            const Lookup lookup{ *m_pending,
+                                 m_generation.load(),
+                                 Clock::now() + REQUEST_BUDGET };
+            m_running = m_pending;
+            m_pending.reset();
+            lock.unlock();
+
+            QList<QRect> chain;
+            const bool complete = available() && lookUp(lookup, &chain);
+
+            lock.lock();
+            m_running.reset();
+            // Keep complete results only, so an expired lookup is retried.
+            if (complete) {
+                m_finished = lookup.request;
+                m_result = std::move(chain);
+            }
+            m_done.notify_all();
+        }
+        m_done.notify_all();
+        lock.unlock();
+
+        // Release apartment-bound interfaces before shutting down COM.
+        m_cacheRequest.Reset();
+        m_controlView.Reset();
+        m_automation.Reset();
+        if (comReady) {
+            CoUninitialize();
+        }
+    }
+
+    std::mutex m_mutex;
+    std::condition_variable m_wake;
+    std::condition_variable m_done;
+    std::optional<Request> m_pending;
+    std::optional<Request> m_running;
+    std::optional<Request> m_finished;
+    QList<QRect> m_result;
+    bool m_stopping = false;
+    // Changes whenever a lookup is superseded, which cancels it.
+    std::atomic<quint64> m_generation{ 0 };
+    std::atomic_bool m_available{ false };
+
+    // Only used on the worker thread.
+    ComPtr<IUIAutomation2> m_automation;
+    ComPtr<IUIAutomationCondition> m_controlView;
+    ComPtr<IUIAutomationCacheRequest> m_cacheRequest;
+
     std::thread m_thread;
 };
 

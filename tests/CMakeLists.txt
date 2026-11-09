@@ -34,3 +34,16 @@ flameshot_add_test(
   LIBRARIES Qt${QT_VERSION_MAJOR}::Widgets)
 target_compile_definitions(
   flameshot-selection-widget-tests PRIVATE APP_VERSION="test" FLAMESHOT_GIT_HASH="test")
+
+if(WIN32)
+  # Drives a real Notepad window, so it needs the Windows platform plugin.
+  flameshot_add_test(
+    windows-smart-region
+    SOURCES windowssmartregiontest.cpp
+            ${CAPTURE_DIR}/smartregiondetector.cpp
+            ${CAPTURE_DIR}/windowssmartregiondetector.cpp
+    LIBRARIES Qt${QT_VERSION_MAJOR}::Gui dwmapi ole32 uiautomationcore)
+  target_compile_definitions(
+    flameshot-windows-smart-region-tests PRIVATE FLAMESHOT_SMART_REGION_BACKEND)
+  set_tests_properties(windows-smart-region PROPERTIES ENVIRONMENT "")
+endif()
