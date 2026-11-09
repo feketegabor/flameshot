@@ -90,9 +90,11 @@ void WindowsSmartRegionTest::findsElementsInsideWindow_data()
     QTest::newRow("chrome")
       << chrome << QStringList() << QStringLiteral("Chrome_WidgetWin_1") << 4
       << 0.25 << 10000 << false;
+    // A covered Chromium window counts as hidden and may build its tree
+    // several seconds later. It stays built while the application runs.
     QTest::newRow("chrome-covered")
       << chrome << QStringList() << QStringLiteral("Chrome_WidgetWin_1") << 4
-      << 0.25 << 10000 << true;
+      << 0.25 << 20000 << true;
 }
 
 void WindowsSmartRegionTest::findsElementsInsideWindow()
