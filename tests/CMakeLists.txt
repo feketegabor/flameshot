@@ -3,14 +3,14 @@ find_package(Qt${QT_VERSION_MAJOR} CONFIG REQUIRED Core Gui Widgets Test)
 set(CAPTURE_DIR ${CMAKE_SOURCE_DIR}/src/widgets/capture)
 
 function(flameshot_add_test name)
-  cmake_parse_arguments(TEST "" "" "SOURCES;LIBRARIES" ${ARGN})
+  cmake_parse_arguments(TEST "" "" "SOURCES;LIBRARIES;ARGS" ${ARGN})
   add_executable(flameshot-${name}-tests ${TEST_SOURCES})
   target_include_directories(flameshot-${name}-tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
   target_link_libraries(
     flameshot-${name}-tests
     PRIVATE project_options Qt${QT_VERSION_MAJOR}::Test ${TEST_LIBRARIES})
   set_target_properties(flameshot-${name}-tests PROPERTIES AUTOMOC ON)
-  add_test(NAME ${name} COMMAND flameshot-${name}-tests)
+  add_test(NAME ${name} COMMAND flameshot-${name}-tests ${TEST_ARGS})
   set_tests_properties(${name} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endfunction()
 
@@ -42,7 +42,9 @@ if(WIN32)
     SOURCES windowssmartregiontest.cpp
             ${CAPTURE_DIR}/smartregiondetector.cpp
             ${CAPTURE_DIR}/windowssmartregiondetector.cpp
-    LIBRARIES Qt${QT_VERSION_MAJOR}::Gui dwmapi ole32 uiautomationcore)
+    LIBRARIES Qt${QT_VERSION_MAJOR}::Gui dwmapi ole32 uiautomationcore
+    # Keep a log, so CI can show what was found in each application.
+    ARGS -o windows-smart-region.txt,txt -o -,txt)
   target_compile_definitions(
     flameshot-windows-smart-region-tests PRIVATE FLAMESHOT_SMART_REGION_BACKEND)
   set_tests_properties(windows-smart-region PROPERTIES ENVIRONMENT "")

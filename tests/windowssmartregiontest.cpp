@@ -21,6 +21,7 @@
 #include <QTemporaryDir>
 #include <QTest>
 #include <QUrl>
+#include <QWindow>
 
 class WindowsSmartRegionTest : public QObject
 {
@@ -64,22 +65,28 @@ void WindowsSmartRegionTest::findsElementsInsideWindow_data()
     QTest::addColumn<QString>("windowClass");
     QTest::addColumn<int>("minimumRegions");
     QTest::addColumn<int>("timeoutMs");
+    // Whether a full screen window covers the application during lookups,
+    // like the capture overlay does.
+    QTest::addColumn<bool>("covered");
 
     // A text area directly inside a window.
     QTest::newRow("notepad") << QStringLiteral("notepad.exe") << QStringList()
-                             << QStringLiteral("Notepad") << 2 << 5000;
-    // A file list with thousands of items several levels deep: too slow for a
-    // lookup that walks every element one call at a time.
+                             << QStringLiteral("Notepad") << 2 << 5000 << true;
+    // A file list with thousands of items, several levels deep.
     QTest::newRow("explorer")
       << QStringLiteral("explorer.exe")
       << QStringList{ QStringLiteral("C:\\Windows\\System32") }
-      << QStringLiteral("CabinetWClass") << 3 << 5000;
+      << QStringLiteral("CabinetWClass") << 3 << 5000 << true;
     // Chromium builds its accessibility tree only once a client asks for it,
     // and a web page has many elements: the case where lookups are slow.
+    const QString chrome = QStringLiteral(
+      "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe");
     QTest::newRow("chrome")
-      << QStringLiteral(
-           "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe")
-      << QStringList() << QStringLiteral("Chrome_WidgetWin_1") << 4 << 10000;
+      << chrome << QStringList() << QStringLiteral("Chrome_WidgetWin_1") << 4
+      << 10000 << false;
+    QTest::newRow("chrome-covered")
+      << chrome << QStringList() << QStringLiteral("Chrome_WidgetWin_1") << 4
+      << 10000 << true;
 }
 
 void WindowsSmartRegionTest::findsElementsInsideWindow()
@@ -89,9 +96,10 @@ void WindowsSmartRegionTest::findsElementsInsideWindow()
     QFETCH(QString, windowClass);
     QFETCH(int, minimumRegions);
     QFETCH(int, timeoutMs);
+    QFETCH(bool, covered);
 
     QTemporaryDir profile;
-    if (QString(QTest::currentDataTag()) == QLatin1String("chrome")) {
+    if (windowClass == QLatin1String("Chrome_WidgetWin_1")) {
         if (!QFile::exists(program)) {
             QSKIP("Chrome is not installed");
         }
@@ -151,6 +159,16 @@ void WindowsSmartRegionTest::findsElementsInsideWindow()
     detector->snapshotWindows();
     // UI Automation starts on the worker thread.
     QTRY_VERIFY(detector->elementDetectionAvailable());
+
+    QWindow overlay;
+    if (covered) {
+        overlay.setFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint |
+                         Qt::Tool);
+        overlay.setGeometry(QGuiApplication::primaryScreen()->geometry());
+        overlay.show();
+        // Give applications time to notice that they are covered.
+        QTest::qWait(2000);
+    }
 
     // Ask repeatedly, like the capture widget does while the pointer rests:
     // the first lookups may only find the window.
