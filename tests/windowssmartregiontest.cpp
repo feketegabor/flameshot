@@ -22,11 +22,12 @@ class WindowsSmartRegionTest : public QObject
     Q_OBJECT
 
 private slots:
-    void findsElementsInsideNotepad();
+    void findsElementsInsideWindow_data();
+    void findsElementsInsideWindow();
 };
 
 namespace {
-HWND findNotepad(DWORD processId)
+HWND findWindow(DWORD processId, const wchar_t* windowClass)
 {
     struct Search
     {
@@ -46,33 +47,60 @@ HWND findNotepad(DWORD processId)
           return TRUE;
       },
       reinterpret_cast<LPARAM>(&search));
-    return search.window;
+    // Some programs hand over to another process, e.g. Explorer to the shell.
+    return search.window ? search.window : FindWindowW(windowClass, nullptr);
 }
 }
 
-void WindowsSmartRegionTest::findsElementsInsideNotepad()
+void WindowsSmartRegionTest::findsElementsInsideWindow_data()
 {
-    QProcess notepad;
-    notepad.start(QStringLiteral("notepad.exe"));
-    if (!notepad.waitForStarted(10000)) {
-        QSKIP("Notepad is not available");
-    }
-    const auto cleanup = qScopeGuard([&notepad]() { notepad.kill(); });
+    QTest::addColumn<QString>("program");
+    QTest::addColumn<QStringList>("arguments");
+    QTest::addColumn<QString>("windowClass");
+    QTest::addColumn<int>("minimumRegions");
 
-    // Newer Notepad versions hand over to another process, so fall back to
-    // any Notepad window.
+    // A text area directly inside a window.
+    QTest::newRow("notepad") << QStringLiteral("notepad.exe") << QStringList()
+                             << QStringLiteral("Notepad") << 2;
+    // A file list with thousands of items several levels deep: too slow for a
+    // lookup that walks every element one call at a time.
+    QTest::newRow("explorer")
+      << QStringLiteral("explorer.exe")
+      << QStringList{ QStringLiteral("C:\\Windows\\System32") }
+      << QStringLiteral("CabinetWClass") << 3;
+}
+
+void WindowsSmartRegionTest::findsElementsInsideWindow()
+{
+    QFETCH(QString, program);
+    QFETCH(QStringList, arguments);
+    QFETCH(QString, windowClass);
+    QFETCH(int, minimumRegions);
+
+    QProcess process;
+    process.start(program, arguments);
+    if (!process.waitForStarted(10000)) {
+        QSKIP("The program is not available");
+    }
     HWND window = nullptr;
+    const auto cleanup = qScopeGuard([&]() {
+        if (window) {
+            PostMessageW(window, WM_CLOSE, 0, 0);
+        }
+        process.kill();
+    });
     QTRY_VERIFY_WITH_TIMEOUT(
-      (window = findNotepad(static_cast<DWORD>(notepad.processId()))) ||
-        (window = FindWindowW(L"Notepad", nullptr)),
+      (window =
+         findWindow(static_cast<DWORD>(process.processId()),
+                    reinterpret_cast<const wchar_t*>(windowClass.utf16()))),
       15000);
-    SetWindowPos(window, HWND_TOP, 100, 100, 800, 600, SWP_SHOWWINDOW);
+    SetWindowPos(window, HWND_TOP, 100, 100, 900, 650, SWP_SHOWWINDOW);
     SetForegroundWindow(window);
-    QTest::qWait(1000);
+    QTest::qWait(1500);
 
     RECT bounds{};
     GetWindowRect(window, &bounds);
-    // The text area fills the middle of the window.
+    // The main content fills the middle of the window.
     const QPoint native((bounds.left + bounds.right) / 2,
                         (bounds.top + bounds.bottom) / 2);
     const qreal scale = QGuiApplication::primaryScreen()->devicePixelRatio();
@@ -85,11 +113,11 @@ void WindowsSmartRegionTest::findsElementsInsideNotepad()
     // UI Automation starts on the worker thread.
     QTRY_VERIFY(detector->elementDetectionAvailable());
 
-    // The first lookups may only find the window while UI Automation warms up
-    // in the background, like the capture widget's follow-up lookups.
+    // Ask repeatedly, like the capture widget does while the pointer rests:
+    // the first lookups may only find the window.
     QList<QRect> regions;
     QTRY_VERIFY_WITH_TIMEOUT(
-      (regions = detector->regionsAt(logical)).size() > 1, 10000);
+      (regions = detector->regionsAt(logical)).size() >= minimumRegions, 5000);
     qInfo() << "Regions under" << logical << regions;
     for (const QRect& region : regions) {
         QVERIFY(region.contains(logical));
