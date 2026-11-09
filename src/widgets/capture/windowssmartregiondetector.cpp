@@ -32,7 +32,6 @@
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <set>
 #include <thread>
 #include <utility>
 
@@ -48,6 +47,8 @@ constexpr int MIN_WINDOW_SIDE = 20;
 // the overlay waits for the worker.
 constexpr std::chrono::milliseconds GUI_WAIT(60);
 constexpr std::chrono::milliseconds SHUTDOWN_WAIT(500);
+// How long showing the overlay waits for Chromium applications to be woken.
+constexpr std::chrono::milliseconds WAKE_WAIT(200);
 constexpr std::chrono::milliseconds REQUEST_BUDGET(1500);
 // Per call into another application.
 constexpr DWORD PROVIDER_TIMEOUT_MS = 300;
@@ -184,6 +185,23 @@ public:
 
     bool available() const { return m_state->available.load(); }
 
+    // Chromium-based applications (Chrome, Edge, Electron) only build the
+    // element tree of their web content once an assistive tool hit-tests
+    // them through UI Automation. That hit-test would find the capture
+    // overlay, so it is done at these points before the overlay is shown.
+    // The applications then build the tree in about a second.
+    void wakeChromiumAt(QList<POINT> points)
+    {
+        State& state = *m_state;
+        std::unique_lock lock(state.mutex);
+        state.wakePoints = std::move(points);
+        state.wakePending = !state.wakePoints.isEmpty();
+        state.wake.notify_one();
+        state.done.wait_for(lock, WAKE_WAIT, [&state]() {
+            return state.stopping || !state.wakePending;
+        });
+    }
+
 private:
     using Clock = std::chrono::steady_clock;
 
@@ -228,7 +246,8 @@ private:
         ComPtr<IUIAutomation2> automation;
         ComPtr<IUIAutomationCondition> controlView;
         ComPtr<IUIAutomationCacheRequest> cacheRequest;
-        std::set<HWND> preparedWindows;
+        QList<POINT> wakePoints;
+        bool wakePending = false;
     };
 
     // A result is handed out once: asking again starts a new lookup, which
@@ -244,33 +263,6 @@ private:
     {
         return state.generation.load() == lookup.generation &&
                Clock::now() < lookup.deadline;
-    }
-
-    // Chromium-based applications (Chrome, Edge, Electron) only build the
-    // element tree of their web content once an assistive tool asks their
-    // hidden content window for it. They build it in the background, in about
-    // a second, so the follow-up lookups find the elements.
-    static BOOL CALLBACK wakeChromium(HWND child, LPARAM stateValue)
-    {
-        wchar_t name[64] = {};
-        GetClassNameW(child, name, static_cast<int>(std::size(name)));
-        if (wcscmp(name, L"Chrome_RenderWidgetHostHWND") == 0) {
-            const auto* state = reinterpret_cast<const State*>(stateValue);
-            ComPtr<IUIAutomationElement> element;
-            state->automation->ElementFromHandle(child, &element);
-            ComPtr<IAccessible> accessible;
-            AccessibleObjectFromWindow(
-              child, OBJID_CLIENT, IID_PPV_ARGS(&accessible));
-        }
-        return TRUE;
-    }
-
-    static void prepareWindow(State& state, HWND window)
-    {
-        if (state.preparedWindows.insert(window).second) {
-            EnumChildWindows(
-              window, wakeChromium, reinterpret_cast<LPARAM>(&state));
-        }
     }
 
     // The innermost visible child window under the position.
@@ -463,7 +455,6 @@ private:
             chain->clear();
             return true;
         }
-        prepareWindow(state, window);
 
         // Prefer MSAA when it finds an element inside the innermost window.
         RECT childRect{};
@@ -509,10 +500,25 @@ private:
 
         std::unique_lock lock(state.mutex);
         for (;;) {
-            state.wake.wait(
-              lock, [&state]() { return state.stopping || state.pending; });
+            state.wake.wait(lock, [&state]() {
+                return state.stopping || state.pending || state.wakePending;
+            });
             if (state.stopping) {
                 break;
+            }
+            if (state.wakePending) {
+                const QList<POINT> points = std::exchange(state.wakePoints, {});
+                lock.unlock();
+                for (const POINT& point : points) {
+                    ComPtr<IUIAutomationElement> element;
+                    if (state.available.load()) {
+                        state.automation->ElementFromPoint(point, &element);
+                    }
+                }
+                lock.lock();
+                state.wakePending = false;
+                state.done.notify_all();
+                continue;
             }
             const Lookup lookup{ *state.pending,
                                  state.generation.load(),
@@ -576,6 +582,7 @@ private:
     }
 
     void addWindow(HWND window);
+    void wakeChromium();
 
     // Front to back, in the order EnumWindows reports them.
     QList<Window> m_windows;
@@ -592,6 +599,43 @@ void WindowsSmartRegionDetector::snapshotWindows()
     EnumDisplayMonitors(
       nullptr, nullptr, collectMonitor, reinterpret_cast<LPARAM>(&context));
     EnumWindows(collectWindow, reinterpret_cast<LPARAM>(this));
+    wakeChromium();
+}
+
+void WindowsSmartRegionDetector::wakeChromium()
+{
+    constexpr int MAX_WINDOWS = 8;
+    const auto isChromium = [](HWND window) {
+        wchar_t name[32] = {};
+        GetClassNameW(window, name, static_cast<int>(std::size(name)));
+        return wcscmp(name, L"Chrome_WidgetWin_1") == 0;
+    };
+    // A point where the window itself is visible, so the hit-test reaches it.
+    const auto visibleAt = [](HWND window, const POINT& point) {
+        return GetAncestor(WindowFromPoint(point), GA_ROOT) == window;
+    };
+
+    QList<POINT> points;
+    POINT cursor{};
+    if (GetCursorPos(&cursor)) {
+        const HWND window = GetAncestor(WindowFromPoint(cursor), GA_ROOT);
+        if (window && isChromium(window)) {
+            points.append(cursor);
+        }
+    }
+    for (const Window& window : m_windows) {
+        if (points.size() >= MAX_WINDOWS) {
+            break;
+        }
+        const QPoint center = window.nativeGeometry.center();
+        const POINT point{ center.x(), center.y() };
+        if (isChromium(window.handle) && visibleAt(window.handle, point)) {
+            points.append(point);
+        }
+    }
+    if (!points.isEmpty()) {
+        m_automation.wakeChromiumAt(std::move(points));
+    }
 }
 
 void WindowsSmartRegionDetector::addWindow(HWND window)
